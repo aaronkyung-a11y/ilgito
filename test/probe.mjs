@@ -1,0 +1,14 @@
+import { createRequire } from 'module';
+const require = createRequire('/opt/npm-tools/node_modules/');
+const { chromium } = require('playwright');
+const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--no-sandbox'] });
+const p = await b.newPage();
+const fails = [];
+p.on('requestfailed', r => fails.push(r.url().slice(0,90)+' :: '+(r.failure()||{}).errorText));
+p.on('console', m => console.log('console:', m.text().slice(0,200)));
+await p.goto('file:///home/claude/ilgito/test/probe.html');
+await p.waitForFunction('window.R && window.R.done', null, {timeout: 20000}).catch(e=>console.log('timeout'));
+console.log(JSON.stringify(await p.evaluate('window.R'), null, 1));
+console.log('failed:', fails);
+await p.screenshot({ path: 'shots/probe.png' });
+await b.close();

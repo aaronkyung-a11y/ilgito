@@ -1,0 +1,72 @@
+<meta name="description" content="말 위에서 맞붙는 단판 승부 — 1인칭 3D 삼국지 기마 일기토">
+<meta property="og:title" content="삼국지 일기토">
+<meta property="og:description" content="말 위에서 맞붙는 단판 승부. 쳐내고, 무너뜨리고, 베어라.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="__PAGES_URL__">
+<meta property="og:image" content="__PAGES_URL__icons/icon-512.png">
+<meta name="theme-color" content="#0e0b09">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="일기토">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script>
+// PWA: 서비스 워커 등록, 설치 단추(Android·데스크톱 Chrome), iOS 설치 안내, 새 버전 적용 단추
+(function () {
+  var ok = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (ok && 'serviceWorker' in navigator) {
+    var hadCtl = !!navigator.serviceWorker.controller;
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        // 열고 3초 뒤, 그리고 앱으로 돌아올 때마다 새 버전이 있는지 직접 확인한다
+        var check = function () { try { var p = reg.update(); if (p && p.catch) p.catch(function () {}); } catch (e) {} };
+        setTimeout(check, 3000);
+        document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') check(); });
+      }).catch(function () {});
+    });
+    // 새 서비스 워커가 넘겨받았는데 지금 열린 화면이 옛 판이면(오프라인·느린 망에서 캐시본으로 연 경우) "새 버전 적용" 단추를 보인다.
+    // 온라인으로 열면 화면이 이미 새 판이라 버전이 같으므로 띄우지 않는다
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadCtl) { hadCtl = true; return; }
+      var c = navigator.serviceWorker.controller;
+      if (!c || !window.MessageChannel) return;
+      var ch = new MessageChannel();
+      ch.port1.onmessage = function (e) {
+        if (!e.data || !e.data.v || e.data.v === '__VERSION__') return;
+        var b = document.getElementById('btnUpdate');
+        if (b) b.classList.remove('hidden');
+      };
+      c.postMessage({ type: 'ilgito-ver' }, [ch.port2]);
+    });
+  }
+  var mm = window.matchMedia ? function (q) { return matchMedia(q).matches; } : function () { return false; };
+  var standalone = mm('(display-mode: standalone)') || mm('(display-mode: fullscreen)') || navigator.standalone === true;
+  var deferred = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferred = e;
+    var b = document.getElementById('btnInstall');
+    if (b) b.classList.remove('hidden');
+  });
+  window.addEventListener('appinstalled', function () {
+    deferred = null;
+    var b = document.getElementById('btnInstall');
+    if (b) b.classList.add('hidden');
+  });
+  document.addEventListener('DOMContentLoaded', function () {
+    var up = document.getElementById('btnUpdate');
+    if (up) up.addEventListener('click', function () { location.reload(); });
+    var b = document.getElementById('btnInstall'), h = document.getElementById('iosHint');
+    if (b) b.addEventListener('click', function () {
+      if (!deferred) return;
+      deferred.prompt();
+      deferred.userChoice.then(function () { deferred = null; b.classList.add('hidden'); });
+    });
+    var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (h && ios && !standalone) h.classList.remove('hidden');
+    if (standalone) document.documentElement.classList.add('standalone');
+  });
+})();
+</script>

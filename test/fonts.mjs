@@ -1,0 +1,10 @@
+import { createRequire } from 'module';
+const require = createRequire('/opt/npm-tools/node_modules/');
+const { chromium } = require('playwright');
+const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const p = await b.newPage({ viewport: { width: 1100, height: 1000 } });
+await p.goto('file:///home/claude/ilgito/test/fonts.html');
+await p.waitForFunction('window.done', null, {timeout: 20000}).catch(()=>{});
+await p.waitForTimeout(1500);
+await p.screenshot({ path: 'shots/fonts.png' });
+await b.close();

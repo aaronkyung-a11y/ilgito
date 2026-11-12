@@ -1,0 +1,12 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;600;800&family=Shippori+Mincho+B1:wght@700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head><body><canvas id="c" width="200" height="200"></canvas>
+<p style="font:800 40px 'Shippori Mincho B1'">一騎討 華雄 呂布 合斬破崩危討</p>
+<p style="font:600 30px 'Hahmlet'">삼국지 일기토 화웅</p>
+<script>
+window.R = {three: typeof THREE, rev: (window.THREE||{}).REVISION};
+try { const r = new THREE.WebGLRenderer({canvas: document.getElementById('c')}); R.gl = r.getContext().getParameter(r.getContext().VERSION); R.renderer = r.getContext().getParameter(r.getContext().RENDERER);} catch(e){ R.err = String(e); }
+document.fonts.ready.then(async()=>{ try{ await document.fonts.load('800 40px "Shippori Mincho B1"','一騎討'); await document.fonts.load('600 30px "Hahmlet"','삼국지'); }catch(e){R.ferr=String(e)}
+ R.fonts = [...document.fonts].filter(f=>f.status==='loaded').map(f=>f.family+' '+f.weight).slice(0,12); R.done=true; });
+</script></body></html>
