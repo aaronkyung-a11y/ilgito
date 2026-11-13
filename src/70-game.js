@@ -93,6 +93,7 @@ const Game = (() => {
     UI.showVs(G.stage, G.stageIdx);
     VM.rest(); VM.setBase('idle');
     G.cut = { kind: 'low', t: 0, dur: 1.15, side: -1, next: { kind: 'face', t: 0, dur: 1.25, side: 1, expr: 'kiai' } };
+    after(0.25, () => { if (G.mode === 'intro') Snd.neigh(0.8, -0.2); });
     after(1.3, () => { if (G.mode === 'intro') { eShout(true); F2.focus(0.9, 0.5, 0.36, 0.7); Snd.hitDrum(0.8); Cam.shake(0.35); } });
   }
   function beginDuel() {
@@ -273,7 +274,7 @@ const Game = (() => {
     e.strings = r.strings; e.windMul = r.windMul * (e.baseWind || 1);
     E.anim.play([{ p: EP.roar, d: 0.28, e: 'out' }, { p: EP.roar, d: 0.72, e: 'lin' }, { p: EP.guard, d: 0.3, e: 'io' }]);
     E.aura = 1; G.eRearT = 0.8; G.push.kick(3);
-    Snd.horn(1, 0.7); Snd.snort(1, 0.2); Snd.hitDrum(1); Cam.shake(0.7);
+    Snd.horn(1, 0.7); Snd.snort(1, 0.2); Snd.neigh(1, 0.15); Snd.hitDrum(1); Cam.shake(0.7);
     F2.pop('怒', e.def.kr + josa(e.def.kr, '이', '가') + ' 격노했다!', { size: 30, color: '#ff4a2a', dur: 1.3, y: 0.66 });
     F2.flash(0.3, '200,40,24');
     G.cut = { kind: 'low', t: 0, dur: 0.62, side: 1, expr: 'rage', next: { kind: 'face', t: 0, dur: 0.62, side: -1, expr: 'rage' } };

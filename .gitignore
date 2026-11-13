@@ -4,3 +4,5 @@ shots/
 audio/mono/
 audio/cut/
 audio/render/
+audio/voice/*.wav
+audio/voice/*.cut.mp3
