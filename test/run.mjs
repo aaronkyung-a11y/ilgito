@@ -215,9 +215,13 @@ const S = {
   async faces() {
     const url = await ev(() => {
       const I = window.__ilgito, ex = ['idle', 'kiai', 'hurt', 'rage'], who = I.HEROES.map((h) => h.look).concat(I.STAGES.map((s) => s.look));
-      const cw = 204, ch = 198, c = document.createElement('canvas'); c.width = cw * 4; c.height = ch * who.length;
-      const g = c.getContext('2d');
-      who.forEach((look, r) => ex.forEach((e, q) => g.drawImage(I.FACE.cutin(look, e), q * cw, r * ch, cw, ch)));
+      const cw = 160, ch = 202, c = document.createElement('canvas'); c.width = cw * 8; c.height = ch * who.length;
+      const g = c.getContext('2d'); g.fillStyle = '#35607e'; g.fillRect(0, 0, c.width, c.height);
+      who.forEach((look, r) => ex.forEach((e, q) => {
+        g.drawImage(I.FACE.cutin(look, e), q * cw, r * ch, cw, ch);                       // the ink cut-in panel, as shown in the band
+        const t = I.FACE.tex(look, e).image, k = t.width / 512;                            // the colour head texture, front part only
+        g.drawImage(t, 58 * k, 66 * k, 140 * k, 152 * k, (4 + q) * cw, r * ch, cw, ch);
+      }));
       return c.toDataURL('image/png');
     });
     fs.writeFileSync('shots/faces.png', Buffer.from(url.split(',')[1], 'base64'));

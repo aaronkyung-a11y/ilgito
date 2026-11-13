@@ -319,22 +319,43 @@ function animHorse(h, t, s) {
 
 // ── rider
 // half-widths of the shaped head at height y: [side, front, chin shift]
+// the lower face, shared by the head mesh and whatever wraps it (beards). d runs from 0 at the cheekbones to 1 under the chin.
+// faceW: the width — nearly straight down to the angle of the jaw, in sharply to a square chin, then closed off underneath.
+// faceZ: the profile — the chin stays forward under the mouth instead of rolling away like a ball.
+function faceW(d) { return d < 0.55 ? 1 - 0.18 * d : d < 0.92 ? lerp(0.901, 0.4, (d - 0.55) / 0.37) : 0.4 * Math.sqrt(Math.max(0, 1 - Math.pow((d - 0.92) / 0.08, 2))); }
+function faceZ(d) { const q = Math.min(d, 0.92), z = 1 - 0.05 * q - 0.22 * q * q * q; return d < 0.92 ? z : z * Math.sqrt(Math.max(0, 1 - Math.pow((d - 0.92) / 0.08, 2))); }
+const HEAD_X = 0.0975, HEAD_Z = 0.1225;
 function headR(y) {
-  const t = clamp(y / 0.1425, -1, 1), s = Math.sqrt(1 - t * t), d = t < 0 ? -t : 0;
-  return [0.11 * s * (1 - 0.38 * d * d), 0.12 * s * (1 - 0.12 * d * d), 0.016 * Math.sin(d * PI)];
+  const t = clamp(y / 0.1425, -1, 1), s = Math.sqrt(1 - t * t);
+  return t >= 0 ? [HEAD_X * s, HEAD_Z * s, 0] : [HEAD_X * faceW(-t), HEAD_Z * faceZ(-t), 0];
 }
 function headG() {
-  const g = new T.SphereGeometry(0.125, 24, 16), p = g.attributes.position;
+  const WS = 44, HS = 30, g = new T.SphereGeometry(0.125, WS, HS), p = g.attributes.position, uv = g.attributes.uv;
+  const A0 = 1.047, C = 0.74, K = (PI - A0 * C) / (PI - A0), E = 2 / 2.25;
   for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i) * 0.88, y = p.getY(i) * 1.14, z = p.getZ(i) * (p.getZ(i) > 0 ? 0.96 : 1.02);
-    if (y < 0) { const d = -y / 0.1425; x *= 1 - 0.38 * d * d; z *= 1 - 0.12 * d * d; if (z > 0) z += 0.016 * Math.sin(d * PI) * sat(z / 0.04); }
-    else if (z > 0) z += 0.006 * Math.exp(-Math.pow((y - 0.05) / 0.022, 2)) * sat(z / 0.05);      // brow ridge
+    // crowd the columns toward the face (and the back of the head) so the nose has something to be made of
+    const ph0 = uv.getX(i) * TAU, ph = ph0 + 0.2 * Math.sin(2 * ph0), th = (1 - uv.getY(i)) * PI, st = Math.sin(th);
+    // texture: the face is painted within ±44° of the front; spread it over ±60° of the head so the features fill the face instead of floating in it
+    const dl = ph - PI / 2, al = Math.abs(dl);
+    uv.setX(i, 0.25 + (Math.sign(dl) * (al < A0 ? al * C : A0 * C + (al - A0) * K)) / TAU);
+    const cs = Math.cos(ph), sn = Math.sin(ph), y = 0.1425 * Math.cos(th), d = y < 0 ? -y / 0.1425 : 0;
+    // the front half is a squarer section than an ellipse: flat cheeks, cheekbones at the corners
+    let x = -HEAD_X * (sn > 0 ? Math.sign(cs) * Math.pow(Math.abs(cs), E) : cs) * (d ? faceW(d) : st);
+    let z = sn > 0 ? Math.pow(sn, E) * HEAD_Z * (d ? faceZ(d) : st) : sn * 0.13 * st;
+    if (z > 0) {
+      const front = sat(z / 0.04), ax = Math.abs(x);
+      z += 0.006 * Math.exp(-Math.pow((y - 0.052) / 0.016, 2)) * sat(1 - ax / 0.08) * front;                               // brow ridge
+      z -= 0.007 * Math.exp(-Math.pow((y - 0.028) / 0.014, 2)) * Math.exp(-Math.pow((ax - 0.043) / 0.022, 2)) * front;      // eye sockets
+      z += 0.004 * Math.exp(-Math.pow((y + 0.07) / 0.02, 2)) * Math.exp(-Math.pow(x / 0.03, 2)) * front;                    // the mouth sits forward a little
+      const nn = sat((0.04 - y) / 0.075), h = y >= -0.035 ? 0.004 + 0.03 * Math.pow(nn, 1.3) : 0.034 * (1 - sat((-0.035 - y) / 0.012));
+      z += h * Math.exp(-Math.pow(x / (0.009 + 0.007 * nn), 2)) * front;                                                    // nose: a wedge from between the brows to its tip
+    }
     p.setXYZ(i, x, y, z);
   }
   g.computeVertexNormals();
   const nr = g.attributes.normal;
-  for (let r = 0; r <= 16; r++) {
-    const a = r * 25, b = a + 24, x = nr.getX(a) + nr.getX(b), y = nr.getY(a) + nr.getY(b), z = nr.getZ(a) + nr.getZ(b), l = Math.hypot(x, y, z) || 1;
+  for (let r = 0; r <= HS; r++) {
+    const a = r * (WS + 1), b = a + WS, x = nr.getX(a) + nr.getX(b), y = nr.getY(a) + nr.getY(b), z = nr.getZ(a) + nr.getZ(b), l = Math.hypot(x, y, z) || 1;
     nr.setXYZ(a, x / l, y / l, z / l); nr.setXYZ(b, x / l, y / l, z / l);
   }
   return g;
@@ -420,11 +441,11 @@ function makeRider(look) {
   wA.mesh(armor, waist); wG.mesh(gold, waist); wS.mesh(sash, waist); wK.mesh(skin, waist); wA2.mesh(armor2, waist); wP.mesh(capeP, waist);
   // head
   const head = new T.Group(); head.position.set(0, 0.68, 0.02); head.rotation.order = 'YXZ'; waist.add(head);
-  if (look.bulk) head.scale.x = 1 / look.bulk;
+  head.scale.set(0.9 / (look.bulk || 1), 0.9, 0.9);       // a smaller head on the shoulders: taller, more heroic proportions
   mesh(headG(), faceM, 0, 0, 0, head);
   const hK = new Merge(), hG = new Merge(), hA2 = new Merge(), hA = new Merge();
   hK.add(loftG(ringsY([[0.036, 0.007, 0.006, 0.117], [0.005, 0.0105, 0.011, 0.124], [-0.022, 0.016, 0.016, 0.131], [-0.036, 0.0165, 0.008, 0.122]]), 8));
-  [1, -1].forEach((k) => hK.add(new T.SphereGeometry(0.03, 8, 6), M4(k * 0.108, -0.005, -0.005, 0, 0, 0, 0.35, 1, 0.65)));
+  [1, -1].forEach((k) => hK.add(new T.SphereGeometry(0.03, 8, 6), M4(k * 0.096, -0.005, -0.005, 0, 0, 0, 0.35, 1, 0.65)));
   hK.mesh(skin, head);
   if (look.beard === 1 || look.beard === 2) mesh(beardG(look.beard === 2), hairM, 0, 0, 0, head);
   const plumes = [];

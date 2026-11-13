@@ -44,7 +44,7 @@ const F2 = (() => {
   for (let i = 0; i < 40; i++) lines.push({ a: rnd(TAU), r: Math.random(), l: Math.random(), w: Math.random(), o: Math.random() });
   for (let i = 0; i < 52; i++) jag.push(Math.random());
   const wipe = { on: false, t: 0, dur: 1.2, text: '', sub: '', mid: null, done: null, midFired: false };
-  const BR = '"Yuji Boku","Noto Serif KR","AppleMyungjo",serif', HD = '"East Sea Dokdo","Yuji Boku","Noto Serif KR",cursive', BD = '"Hahmlet","Noto Serif KR",sans-serif';
+  const BR = '"Yuji Boku","Noto Serif KR","AppleMyungjo",serif', HD = '"East Sea Dokdo","Yuji Boku","Noto Serif KR",cursive', BD = '"Hahmlet","Noto Serif KR",sans-serif', HB = '"Nanum Brush Script","East Sea Dokdo","Yuji Boku",cursive';
   function resize(w, h) {
     dpr = Math.min(window.devicePixelRatio || 1, 1.5); W = w; H = h;
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); U = Math.min(w, h) / 100;
@@ -120,10 +120,10 @@ const F2 = (() => {
       g.fillStyle = i % 3 ? 'rgba(255,255,255,0.45)' : 'rgba(10,6,8,0.4)'; g.fillRect(lerp(-W, W, u) * -cut.side - len / 2, yy, len, th);
     }
     g.restore();
-    const C = FACE.CUT, sc = bh / (cut.eyes ? 60 : 126), fy = cut.eyes ? 108 : 139;
+    const C = FACE.CUT, sc = bh / (cut.eyes ? 54 : 132), fy = cut.eyes ? 109 : 141, nx = 0.86;      // nx: the unwrapped face is drawn a little narrower, as it looks head-on
     const xf = (cut.eyes ? W * 0.5 : W * (cut.side > 0 ? 0.36 : 0.64)) - cut.side * ((1 - EASE.out(sat(cut.t / 0.14))) * W * 0.7 - cut.t * 14);
     g.save(); g.translate(xf, yAt(xf)); g.rotate(ang);
-    g.drawImage(cut.art, -(128 - C.x) * sc, -(fy - C.y) * sc, C.w * sc, C.h * sc);
+    g.drawImage(cut.art, -(128 - C.x) * sc * nx, -(fy - C.y) * sc, C.w * sc * nx, C.h * sc);
     g.restore();
     g.restore();
     g.strokeStyle = '#0e0b09'; g.lineWidth = Math.max(4, bh * 0.05);
@@ -131,29 +131,31 @@ const F2 = (() => {
     g.strokeStyle = `rgb(${cut.rgb})`; g.lineWidth = Math.max(1.5, bh * 0.014); const d = bh * 0.05;
     g.beginPath(); g.moveTo(-10, yAt(-10) - hh - d); g.lineTo(W + 10, yAt(W + 10) - hh - d); g.moveTo(-10, yAt(-10) + hh + d); g.lineTo(W + 10, yAt(W + 10) + hh + d); g.stroke();
     if (cut.text) {
-      const tx = cut.eyes ? W * 0.5 : W * (cut.side > 0 ? 0.74 : 0.26), fs0 = bh * (cut.eyes ? 0.34 : 0.4), pk = lerp(1.9, 1, EASE.out(sat((cut.t - 0.05) / 0.15)));
+      const tx = cut.eyes ? W * 0.5 : W * (cut.side > 0 ? 0.71 : 0.29), fs0 = bh * (cut.eyes ? 0.34 : 0.4), pk = lerp(1.9, 1, EASE.out(sat((cut.t - 0.05) / 0.15)));
       g.save(); g.translate(tx + Math.sin(tAll * 80) * fs0 * 0.02, yAt(tx) + (cut.eyes ? hh + fs0 * 0.75 : bh * 0.02)); g.rotate(ang - 0.05); g.globalAlpha = open * sat((cut.t - 0.04) / 0.05);
       g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-      let fs = fs0 * pk; g.font = `400 ${fs}px ${HD}`;
-      const tw = g.measureText(cut.text).width, maxW = W * (cut.eyes ? 0.9 : 0.5); if (tw > maxW) { fs *= maxW / tw; g.font = `400 ${fs}px ${HD}`; }
+      let fs = fs0 * pk * 1.3; g.font = `400 ${fs}px ${HB}`;
+      const tw = g.measureText(cut.text).width, maxW = W * (cut.eyes ? 0.9 : 0.46); if (tw > maxW) { fs *= maxW / tw; g.font = `400 ${fs}px ${HB}`; }
       g.lineWidth = fs * 0.22; g.strokeStyle = '#0e0b09'; g.strokeText(cut.text, 0, 0); g.fillStyle = '#fffdf2'; g.fillText(cut.text, 0, 0);
       if (cut.sub) { const ss = Math.max(15, fs0 * 0.34); g.font = `400 ${ss}px ${BR}`; g.lineWidth = ss * 0.24; g.strokeText(cut.sub, 0, fs * 0.74); g.fillStyle = '#ffd27a'; g.fillText(cut.sub, 0, fs * 0.74); }
       g.restore();
     }
   }
+  // shouts: brush lettering thrown straight onto the picture, with a slash of ink under it
   function drawKiai(rdt) {
     for (let i = kiais.length - 1; i >= 0; i--) {
       const k = kiais[i]; k.t += rdt; const u = k.t / k.dur;
       if (u >= 1) { kiais.splice(i, 1); continue; }
-      const sc = k.t < 0.07 ? lerp(0.3, 1.2, k.t / 0.07) : k.t < 0.14 ? lerp(1.2, 1, (k.t - 0.07) / 0.07) : 1 + (k.t - 0.14) * 0.06;
-      const fs = k.size * U * sc, sh = k.t < 0.3 ? fs * 0.035 : 0;
-      g.save(); g.translate((k.px ? k.x : k.x * W) + Math.sin(tAll * 95) * sh, (k.px ? k.y : k.y * H) + Math.cos(tAll * 83) * sh); g.rotate(k.rot); g.globalAlpha = u > 0.8 ? (1 - u) / 0.2 : 1;
-      g.font = `400 ${fs}px ${HD}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      const tw = g.measureText(k.text).width, rx = tw * 0.5 + fs * 0.42, ry = fs * 0.74, n = 9 + Math.round(tw / fs) * 2, r = mulberry(k.seed);
-      g.beginPath();       // a spiky shout balloon
-      for (let j = 0; j < n * 2; j++) { const a = (j / (n * 2)) * TAU, rr = j % 2 ? 0.86 + r() * 0.08 : 1.2 + r() * 0.34, x = Math.cos(a) * rx * rr, y = Math.sin(a) * ry * rr; if (j) g.lineTo(x, y); else g.moveTo(x, y); }
-      g.closePath(); g.fillStyle = k.fill; g.fill(); g.lineJoin = 'miter'; g.lineWidth = Math.max(2.5, fs * 0.07); g.strokeStyle = '#141010'; g.stroke();
-      g.fillStyle = k.color; g.fillText(k.text, 0, fs * 0.05);
+      const sc = k.t < 0.06 ? lerp(2.2, 0.94, EASE.out(k.t / 0.06)) : k.t < 0.12 ? lerp(0.94, 1, (k.t - 0.06) / 0.06) : 1 + (k.t - 0.12) * 0.07;
+      const fs = k.size * U * sc * 1.55, sh = k.t < 0.28 ? fs * 0.03 : 0;
+      g.save(); g.translate((k.px ? k.x : k.x * W) + Math.sin(tAll * 95) * sh, (k.px ? k.y : k.y * H) + Math.cos(tAll * 83) * sh); g.rotate(k.rot - 0.06); g.globalAlpha = u > 0.78 ? (1 - u) / 0.22 : 1;
+      g.font = `400 ${fs}px ${HB}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      const tw = g.measureText(k.text).width, r = mulberry(k.seed);
+      g.fillStyle = 'rgba(14,10,10,0.86)'; g.beginPath();
+      const x0 = -tw * 0.62, x1 = tw * (0.66 + r() * 0.12), yy = fs * 0.36;
+      g.moveTo(x0, yy + fs * 0.02); g.quadraticCurveTo(0, yy - fs * 0.07, x1, yy - fs * 0.1); g.quadraticCurveTo(0, yy + fs * 0.06, x0, yy + fs * 0.02); g.fill();
+      g.lineWidth = fs * 0.17; g.strokeStyle = '#120c0a'; g.strokeText(k.text, 0, 0);
+      g.fillStyle = k.fill; g.fillText(k.text, 0, 0);
       g.restore();
     }
   }

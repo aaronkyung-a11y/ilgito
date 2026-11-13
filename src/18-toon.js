@@ -4,7 +4,7 @@
 function toonEnv() {
   return { sun: { value: V3(0.3, 0.6, -0.7).normalize() }, lit: { value: hex(0xffffff) }, shade: { value: hex(0x8a84a8) }, rim: { value: hex(0xffffff) }, ink: { value: hex(0x1a1210) } };
 }
-const TOON = { W: toonEnv(), V: toonEnv(), res: { value: new T.Vector2(800, 800) }, px: { value: 1.6 } };
+const TOON = { W: toonEnv(), V: toonEnv(), res: { value: new T.Vector2(800, 800) }, px: { value: 1.6 }, hs: { value: 7 } };
 // palette colours were chosen for soft lighting; flat shading wants them lifted (dark ones gain the most)
 function celC(c, g) { const k = hex(c); g = g || 0.72; k.r = Math.pow(k.r, g); k.g = Math.pow(k.g, g); k.b = Math.pow(k.b, g); return k; }
 
@@ -57,6 +57,8 @@ uniform vec4 uP;         // x: terminator, y: softness, z: highlight step, w: hi
 uniform vec4 uS;         // x: specular strength, y: shininess, z: rim strength, w: rim cut
 uniform vec3 uSpecCol;
 uniform float uK;        // 0 = lit by the real sun, 1 = lit by a key light fixed to the camera (keeps faces readable)
+uniform float uHs;       // hatching: spacing of the pen lines, in device pixels
+uniform float uHa;       // hatching: strength (0 = flat cel shade)
 varying vec3 vN;
 varying vec3 vV;
 #ifdef T_MAP
@@ -100,11 +102,20 @@ void main() {
   float fr = 1.0 - max(dot(N, V), 0.0);
   float rim = smoothstep(uS.w, uS.w + 0.045, fr) * smoothstep(-0.3, 0.3, dot(N, Ls)) * uS.z;
   col = mix(col, uRim * (0.55 + 0.45 * base.rgb), rim);
+  // pen hatching in the shade: one set of diagonal strokes, and a second set crossing it where the surface turns well away from the light
+  float hsh = (1.0 - band) * uHa;
+  if (hsh > 0.001) {
+    vec2 fc = gl_FragCoord.xy / uHs;
+    float l1 = abs(fract(fc.x * 0.55 + fc.y) - 0.5) * 2.0, l2 = abs(fract(fc.x - fc.y * 0.45 + 0.25) - 0.5) * 2.0;
+    float hm = (1.0 - smoothstep(0.16, 0.34, l1)) + (1.0 - smoothstep(0.16, 0.34, l2)) * smoothstep(-0.2, -0.55, ndl);
+    col *= 1.0 - 0.46 * min(hm, 1.0) * hsh;
+  }
   col += emissive;
   gl_FragColor = vec4(col, 1.0);
   #include <fog_fragment>
 }`;
-// o: color, map, vcol, flat, side, alphaTest, env ('W'|'V'), key (0..1), edge, soft, hiEdge, hi, spec, shin, specCol, rim, rimCut, fog
+// o: color, map, vcol, flat, side, alphaTest, env ('W'|'V'), key (0..1), edge, soft, hiEdge, hi, spec, shin, specCol, rim, rimCut, fog,
+//    hatch (0..1; by default the figures — anything lit by the key light — are hatched and the scenery is not)
 function toonMat(o) {
   o = o || {};
   const world = (o.env || 'W') === 'W', env = TOON[world ? 'W' : 'V'], defs = {};
@@ -118,6 +129,7 @@ function toonMat(o) {
     uS: { value: new T.Vector4(o.spec || 0, o.shin || 30, o.rim === undefined ? 0.5 : o.rim, o.rimCut === undefined ? 0.62 : o.rimCut) },
     uSpecCol: { value: hex(o.specCol === undefined ? 0xffffff : o.specCol) },
     uK: { value: o.key === undefined ? 0 : o.key },
+    uHs: TOON.hs, uHa: { value: o.hatch === undefined ? (o.key ? 0.6 : 0) : o.hatch },
     fogColor: { value: new T.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 },
   };
   if (o.map) { o.map.updateMatrix(); u.map = { value: o.map }; u.uUvT = { value: o.map.matrix }; }

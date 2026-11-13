@@ -1,6 +1,6 @@
 // 삼국지 일기토 서비스 워커: 한 번 열면 오프라인에서도 실행되고, 온라인이면 열 때마다 새 판을 확인한다.
 // build.js가 버전을 채워 저장소 루트의 sw.js로 내보낸다.
-const VERSION = 'v0.4.0';
+const VERSION = 'v0.5.0';
 const CACHE = 'ilgito-' + VERSION, FONTS = 'ilgito-fonts';
 const CORE = ['./', 'manifest.webmanifest', 'vendor/three.min.js', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 const PAGE = new URL('./', self.registration.scope);
