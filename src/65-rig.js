@@ -17,6 +17,7 @@ const Rig = (() => {
   const _p = V3(), _q2 = V3(), tmpPose = {};
   function dispose() {
     if (!E) return;
+    FACE.purge();
     [E.root, E.trail.mesh, E.rider.seat, E.fallSh].forEach((o) => {
       if (o.parent) o.parent.remove(o);
       o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L && n.geometry !== REIN_G) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
@@ -46,6 +47,10 @@ const Rig = (() => {
   function update(dt, rdt, t, s) {
     if (!E) return;
     E.anim.update(dt);
+    // the face: a shout while winding up or roaring, a wince when struck, a glare once enraged
+    const e = G.e, st = e ? e.state : '';
+    const ex = G.cut && G.cut.expr ? G.cut.expr : !e || G.mode === 'title' ? 'idle' : e.dead || st === 'broken' || st === 'parried' || st === 'stun' || E.flash > 0.35 ? 'hurt' : st === 'windup' || st === 'follow' || st === 'roar' || st === 'charge' ? 'kiai' : e.enraged ? 'rage' : 'idle';
+    if (ex !== E.expr) { E.expr = ex; E.rider.faceM.uniforms.map.value = FACE.tex(E.rider.look, ex); }
     const flP = E.flP.update(dt), flY = E.flY.update(dt), flR = E.flR.update(dt);
     if (E.bolt < 0) {
       E.root.position.copy(s.pos); E.root.rotation.y = s.yaw + s.psi;

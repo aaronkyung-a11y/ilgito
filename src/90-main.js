@@ -4,7 +4,10 @@ const Cam = (() => {
   cam.rotation.order = 'YXZ';
   let trauma = 0, baseFov = 70, W = 1, H = 1, aspect = 1, zoomK = 0, chargeK = 0, headBob = 0;
   const sp = { pitch: new Spring(150, 15), yaw: new Spring(150, 15), roll: new Spring(120, 12), z: new Spring(170, 17), fov: new Spring(120, 13) };
-  const P = V3(), Epos = V3(), invQ = new T.Quaternion(), _p = V3(), scr = { x: 0, y: 0 };
+  const P = V3(), Epos = V3(), invQ = new T.Quaternion(), _p = V3(), _h = V3(), scr = { x: 0, y: 0 };
+  let dutch = 0, dutchTo = 0, dutchHold = 0;
+  // lean the horizon for a while (a dutch angle); it eases back on its own
+  function tilt(v, hold) { dutchTo = REDUCED ? v * 0.3 : v; dutchHold = hold || 0.3; }
   function resize(w, h) {
     W = w; H = h; aspect = w / h;
     baseFov = clamp((2 * Math.atan(Math.tan(rad(31)) / aspect) * 180) / PI, 52, 74);
@@ -61,12 +64,32 @@ const Cam = (() => {
         yaw += dyaw * k * 0.85;
         pitch = lerp(pitch, Math.atan2(_p.y + 0.3 - eyeY, Math.hypot(dx, dz)), k * 0.8);
       }
-      cam.rotation.set(pitch + kP + shP, yaw + kY + shY, roll + kR + shR);
+      dutchHold -= rdt; dutch = damp(dutch, dutchHold > 0 ? dutchTo : 0, dutchHold > 0 ? 14 : 5, rdt);
+      cam.rotation.set(pitch + kP + shP, yaw + kY + shY, roll + kR + shR + dutch);
       zoomK = damp(zoomK, G.mode === 'intro' ? 1 : 0, G.mode === 'intro' ? 3 : 5, rdt);
       // charge: dolly-zoom — long lens while the foe is far, widening as the gap closes
       const far = G.mode === 'charge' ? smooth((dEff - 5) / 34) : 0;
       chargeK = damp(chargeK, far, 6, rdt);
       fov = lerp(lerp(baseFov + G.pGait * 8, 40, chargeK) - (1 - G.focus) * 16 + (G.p && G.p.guard ? -3 : 0), 23, zoomK);
+      // cut shots: the camera leaves the rider's eyes for a moment. 'low' looks up from the ground through a wide lens, 'face' is a long lens on the face
+      let ct = G.cut;
+      if (ct) { ct.t += rdt; if (ct.t >= ct.dur) { ct = G.cut = ct.next || null; if (ct) ct.t = 0; } }
+      if (ct && Rig.E) {
+        const u = ct.t / ct.dur, fx = P.x - Epos.x, fz = P.z - Epos.z, fl = Math.hypot(fx, fz) || 1, ux = fx / fl, uz = fz / fl, sd = ct.side || 1;
+        Rig.headPos(_h);
+        if (ct.kind === 'low') {       // from the ground, off the horse's shoulder
+          const dist = lerp(3.7, 3.2, EASE.out(u));
+          cam.position.set(Epos.x + ux * dist + uz * 1.7 * sd, 0.4, Epos.z + uz * dist - ux * 1.7 * sd);
+          cam.lookAt(_h.x, _h.y * 0.66, _h.z); cam.rotation.z += 0.26 * sd;
+          fov = lerp(88, 80, u);
+        } else {
+          const dist = lerp(3.1, 2.7, EASE.out(u));
+          cam.position.set(_h.x + ux * dist + uz * 0.5 * sd, _h.y + 0.1, _h.z + uz * dist - ux * 0.5 * sd);
+          cam.lookAt(_h.x, _h.y - 0.02, _h.z); cam.rotation.z -= 0.14 * sd;
+          fov = lerp(27, 21, EASE.out(u));
+        }
+        cam.rotation.x += shP; cam.rotation.y += shY; cam.rotation.z += shR;
+      }
     }
     fov = clamp(fov + kF, 12, 100);
     if (Math.abs(fov - cam.fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
@@ -80,7 +103,7 @@ const Cam = (() => {
   function project(v) { _p.copy(v).project(cam); scr.x = (_p.x + 1) * 0.5 * W; scr.y = (1 - _p.y) * 0.5 * H; return scr; }
   const right = (out) => out.set(1, 0, 0).applyQuaternion(cam.quaternion);
   const fwd = (out) => out.set(0, 0, -1).applyQuaternion(cam.quaternion);
-  return { cam, P, Epos, invQ, resize, shake, punch, hitKick, swingKick, update, front, project, right, fwd,
+  return { cam, P, Epos, invQ, resize, shake, punch, hitKick, swingKick, tilt, update, front, project, right, fwd,
     get baseFov() { return baseFov; }, get aspect() { return aspect; }, get headBob() { return headBob; } };
 })();
 
@@ -155,7 +178,7 @@ const Main = (() => {
       vmS.aspect = Cam.aspect; vmS.pitch = Cam.cam.rotation.x; vmS.roll = Cam.cam.rotation.z; vmS.psi = G.psi * clamp(Cam.aspect * 0.8, 0.36, 1);
       vmS.phase = G.pPhase; vmS.gait = G.pGait; vmS.rear = G.pRear; vmS.headBob = Cam.headBob * 0.35;
       VM.update(dt, G.t, vmS);
-      if (draw3d) { renderer.clearDepth(); renderer.render(VM.scene, VM.cam); }
+      if (draw3d && !G.cut) { renderer.clearDepth(); renderer.render(VM.scene, VM.cam); }
     }
     // 2D layer
     let ind = null; const e = G.e;
@@ -209,7 +232,7 @@ const Main = (() => {
   }
   return { boot, resize, tick, info };
 })();
-window.__ilgito = { G, Game, Rig, Cam, VM, Snd, Save, F2, UI, World, EP, VP, STAGES, PALS, ARMY, HEROES, makeAudio, step(dt, n) { for (let i = 0; i < (n || 1); i++) Main.tick(dt); }, info: () => Main.info() };
+window.__ilgito = { G, Game, Rig, Cam, VM, Snd, Save, F2, UI, World, EP, VP, STAGES, PALS, ARMY, HEROES, FACE, makeAudio, step(dt, n) { for (let i = 0; i < (n || 1); i++) Main.tick(dt); }, info: () => Main.info() };
 try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ hero: G.hero.id, stage: G.stageIdx, inRun: G.mode !== 'title' && G.mode !== 'boot' })); } catch (e) {}
 if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(Main.boot);
 else Main.boot((window.claude && window.claude.hot && window.claude.hot.data) || {});

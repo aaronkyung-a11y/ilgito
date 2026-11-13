@@ -211,6 +211,17 @@ const S = {
     const t = await ev(() => { const I = window.__ilgito; I.G.noRender = true; const t0 = performance.now(); I.step(1 / 60, 300); return (performance.now() - t0) / 300; });
     console.log('logic+anim ms/frame (no GL):', t.toFixed(3));
   },
+  // contact sheet of the painted faces: rows = characters, columns = idle/kiai/hurt/rage.  node test/run.mjs faces
+  async faces() {
+    const url = await ev(() => {
+      const I = window.__ilgito, ex = ['idle', 'kiai', 'hurt', 'rage'], who = I.HEROES.map((h) => h.look).concat(I.STAGES.map((s) => s.look));
+      const cw = 204, ch = 198, c = document.createElement('canvas'); c.width = cw * 4; c.height = ch * who.length;
+      const g = c.getContext('2d');
+      who.forEach((look, r) => ex.forEach((e, q) => g.drawImage(I.FACE.cutin(look, e), q * cw, r * ch, cw, ch)));
+      return c.toDataURL('image/png');
+    });
+    fs.writeFileSync('shots/faces.png', Buffer.from(url.split(',')[1], 'base64'));
+  },
   // geometry leak check: uploaded geometries vs geometries still reachable from the scene, over 4 full stage cycles
   async leak() {
     await p.click('#btnGo'); await wait(500);
@@ -288,6 +299,14 @@ const S = {
   },
   async intro() {
     await p.click('#btnGo'); await wait(1300); await shot('intro_' + W); console.log(await st());
+  },
+  // the intro as a strip of frames: node test/run.mjs introseq W H [stage] [hero]
+  async introseq() {
+    const stage = +(process.argv[5] || 0), hero = +(process.argv[6] || 0);
+    await ev(({ stage, hero }) => { const I = window.__ilgito; I.G.hero = I.HEROES[hero]; I.Save.d.cleared = stage; I.Save.d.tut = true; I.Game.toTitle(); }, { stage, hero });
+    await p.click('#btnGo'); await wait(150);
+    await ev(() => { window.__ilgito.G.manual = true; });
+    for (let i = 0; i < 12; i++) { await ev(() => window.__ilgito.step(0.0167, 13)); await wait(60); await shot('introseq_' + String(i).padStart(2, '0')); }
   },
   async charge() {
     await p.click('#btnGo'); await wait(600);

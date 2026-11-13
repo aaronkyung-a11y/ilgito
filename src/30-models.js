@@ -342,7 +342,7 @@ function headG() {
 function beardG(long) {
   return surfG((u, v, out) => {
     const ph = (u - 0.5) * 2.6, a = Math.abs(ph) / 1.3;
-    const yT = -0.074 + 0.05 * Math.pow(a, 1.5), yB = long ? -0.42 + 0.3 * a * a : -0.2 + 0.11 * a * a;
+    const yT = -0.09 + 0.066 * Math.pow(a, 1.5), yB = long ? -0.42 + 0.3 * a * a : -0.2 + 0.11 * a * a;
     const y = lerp(yT, yB, v), h = headR(Math.max(y, -0.128)), k = lerp(1, long ? 0.25 : 0.4, v * v);
     out[0] = Math.sin(ph) * (h[0] + 0.013) * k; out[1] = y; out[2] = Math.cos(ph) * (h[1] + 0.013) * k + h[2] * sat(Math.cos(ph) / 0.4) + (long ? 0.03 * v : 0);
   }, 12, 5, { ur: 4, vr: 1 });
@@ -369,7 +369,7 @@ function makeRider(look) {
   const cloth = reg(toonMat({ color: celC(look.cloth, 0.68), key: KEY, rim: 0.4 }));
   const sash = reg(toonMat({ color: celC(look.sash || 0xc8321e, 0.82), side: T.DoubleSide, key: KEY, rim: 0.4 }));
   const skin = reg(toonMat({ color: look.skin || 0xdcab82, key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
-  const faceM = reg(toonMat({ map: TEX.face(look), key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
+  const faceM = reg(toonMat({ map: FACE.tex(look), key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
   const gold = reg(goldMat());
   const boot = reg(toonMat({ color: 0x3a2a22, key: KEY, spec: 0.3, shin: 14, specCol: 0xb8a898, rim: 0.4 }));
   const hairM = reg(toonMat({ color: look.hair || 0x1c1614, map: TEX.hair, side: T.DoubleSide, key: KEY, rim: 0.3 }));
@@ -396,6 +396,7 @@ function makeRider(look) {
   C.mesh(cloth, seat); B.mesh(boot, seat); A.mesh(armor, seat); G.mesh(gold, seat); A2.mesh(armor2, seat); SS.mesh(sash, seat);
   // torso (turns at the waist)
   const waist = new T.Group(); waist.position.y = 0.1; waist.rotation.order = 'YXZ'; seat.add(waist);
+  if (look.bulk) waist.scale.x = look.bulk;
   const wA = new Merge(), wG = new Merge(), wS = new Merge(), wK = new Merge(), wA2 = new Merge(), wP = new Merge();
   wS.add(loftG(ringsY([[-0.04, 0.2, 0.152], [0.06, 0.198, 0.151], [0.17, 0.204, 0.154]], 2.5), 18, { ur: 3, cap: false }));
   wS.add(new T.SphereGeometry(0.035, 8, 6), M4(0.03, 0.1, 0.16, 0, 0, 0, 1.2, 0.9, 0.7));
@@ -419,18 +420,20 @@ function makeRider(look) {
   wA.mesh(armor, waist); wG.mesh(gold, waist); wS.mesh(sash, waist); wK.mesh(skin, waist); wA2.mesh(armor2, waist); wP.mesh(capeP, waist);
   // head
   const head = new T.Group(); head.position.set(0, 0.68, 0.02); head.rotation.order = 'YXZ'; waist.add(head);
+  if (look.bulk) head.scale.x = 1 / look.bulk;
   mesh(headG(), faceM, 0, 0, 0, head);
   const hK = new Merge(), hG = new Merge(), hA2 = new Merge(), hA = new Merge();
   hK.add(loftG(ringsY([[0.036, 0.007, 0.006, 0.117], [0.005, 0.0105, 0.011, 0.124], [-0.022, 0.016, 0.016, 0.131], [-0.036, 0.0165, 0.008, 0.122]]), 8));
   [1, -1].forEach((k) => hK.add(new T.SphereGeometry(0.03, 8, 6), M4(k * 0.108, -0.005, -0.005, 0, 0, 0, 0.35, 1, 0.65)));
   hK.mesh(skin, head);
-  if (look.beard) mesh(beardG(look.beard === 2), hairM, 0, 0, 0, head);
+  if (look.beard === 1 || look.beard === 2) mesh(beardG(look.beard === 2), hairM, 0, 0, 0, head);
   const plumes = [];
   if (crown) {
     // bare-headed: hair, a topknot in a gold crown, two long pheasant tail feathers
     mesh(new T.SphereGeometry(0.131, 16, 6, 0, TAU, 0, 0.92), hairM, 0, 0.004, -0.006, head).scale.set(0.9, 1.13, 1.02);
     mesh(new T.SphereGeometry(0.131, 12, 6, PI, PI, 0.9, 1.15), hairM, 0, 0.004, -0.006, head).scale.set(0.9, 1.13, 1.02);
     mesh(new T.SphereGeometry(0.048, 8, 6), hairM, 0, 0.165, -0.025, head);
+    if (look.hairBack === 'tail') mesh(tubeG([[0, 0.17, -0.045], [0, 0.205, -0.12], [0, 0.14, -0.21], [0, 0.0, -0.255], [0, -0.17, -0.275], [0, -0.33, -0.25]], [0.028, 0.034, 0.037, 0.033, 0.025, 0.004], 7, { ref: [1, 0, 0] }), hairM, 0, 0, 0, head);
     hG.add(latheG([[0.118, 0.066], [0.125, 0.071], [0.125, 0.094], [0.118, 0.099]], 18), M4(0, 0, 0.002, -0.12, 0, 0, 0.84, 1, 0.93));
     hG.add(latheG([[0.05, 0.0], [0.058, 0.012], [0.046, 0.04], [0.062, 0.062], [0.05, 0.07]], 12), M4(0, 0.135, -0.025));
     for (let i = 0; i < 3; i++) hG.add(new T.ConeGeometry(0.014, 0.06, 5), M4(Math.sin((i - 1) * 0.9) * 0.055, 0.225, -0.025 + Math.cos((i - 1) * 0.9) * 0.055));
@@ -447,6 +450,20 @@ function makeRider(look) {
       }
       plumes.push({ chain, k, feather: true });
     });
+  } else if (look.helm === 'none') {
+    // bare-headed: a cap of hair with a crown of spikes swept up and back
+    const hH = new Merge(), r = mulberry(31), up = V3(0, 1, 0), d = V3(), q = new T.Quaternion();
+    hH.add(new T.SphereGeometry(0.131, 16, 6, 0, TAU, 0, 0.92), M4(0, 0.004, -0.006, 0, 0, 0, 0.9, 1.13, 1.02));
+    hH.add(new T.SphereGeometry(0.131, 12, 6, PI, PI, 0.9, 1.15), M4(0, 0.004, -0.006, 0, 0, 0, 0.9, 1.13, 1.02));
+    for (let i = 0; i < 15; i++) {
+      const az = (i / 15) * TAU + r() * 0.3, front = Math.cos(az) > 0.25, el = front ? 0.95 + r() * 0.4 : 0.2 + r() * 0.9, len = (front ? 0.08 : 0.11) + r() * 0.07;
+      d.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+      const px = d.x * 0.112, py = 0.004 + d.y * 0.142, pz = -0.006 + d.z * 0.128;
+      d.z -= 0.35; d.normalize();          // every spike leans back, as if blown by the charge
+      q.setFromUnitVectors(up, d);
+      hH.add(new T.ConeGeometry(0.034, len, 5), new T.Matrix4().compose(V3(px + d.x * len * 0.4, py + d.y * len * 0.4, pz + d.z * len * 0.4), q, V3(1, 1, 1)));
+    }
+    hH.mesh(hairM, head);
   } else {
     const hm = M4(0, 0, -0.004, 0, 0, 0, 1, 1, 1.07), bowl = [[0.15, 0.072], [0.152, 0.1], [0.144, 0.135], [0.123, 0.168], [0.09, 0.193], [0.05, 0.208], [0.026, 0.213]];
     hA2.add(latheG(bowl, 18), hm);
@@ -464,6 +481,15 @@ function makeRider(look) {
     const pg2 = new T.Group(); pg2.position.set(0, 0.13, 0); pg.add(pg2);
     mesh(tubeG([[0, 0, 0], [0, 0.09, -0.02], [0, 0.16, -0.08], [0, 0.19, -0.17], [0, 0.17, -0.27], [0, 0.11, -0.36], [0, 0.03, -0.42]], [0.05, 0.062, 0.066, 0.062, 0.054, 0.042, 0.03], 10, { ref: [1, 0, 0], cap: false, ur: 3, v: [0.2, 0.32, 0.45, 0.58, 0.72, 0.86, 1] }), plumeM, 0, 0, 0, pg2);
     plumes.push({ chain: [pg, pg2], k: 0, feather: false });
+    if (look.helm === 'wing') [1, -1].forEach((k) => hG.add(loftG(ringsY([[0.07, 0.006, 0.03, 0.0, k * 0.15], [0.13, 0.008, 0.078, -0.03, k * 0.176], [0.22, 0.008, 0.09, -0.078, k * 0.202], [0.31, 0.006, 0.064, -0.135, k * 0.218], [0.4, 0.003, 0.012, -0.2, k * 0.224]]), 8)));
+    if (look.hairBack === 'mane') {       // wild hair spilling out from under the helmet
+      const hH = new Merge(), r = mulberry(57);
+      for (let i = 0; i < 9; i++) {
+        const az = PI + (i / 8 - 0.5) * 2.9, sn = Math.sin(az), cs = Math.cos(az), dl = r() * 0.12;
+        hH.add(tubeG([[sn * 0.13, 0.0, cs * 0.14], [sn * 0.2, -0.09, cs * 0.21], [sn * 0.235, -0.22 - dl * 0.5, cs * 0.25], [sn * 0.22, -0.36 - dl, cs * 0.27]], [0.04, 0.052, 0.04, 0.003], 6, { ref: [cs, 0, -sn] }));
+      }
+      hH.mesh(hairM, head);
+    }
   }
   if (!hG.empty) hG.mesh(gold, head); if (!hA2.empty) hA2.mesh(armor2, head); if (!hA.empty) hA.mesh(armor, head);
   // arms
@@ -476,7 +502,7 @@ function makeRider(look) {
   // cape
   const capeC = 7, capeR = 9, capeG = new T.PlaneGeometry(0.86, 1.2, capeC - 1, capeR - 1);
   const cape = mesh(capeG, capeM, 0, 0, 0, waist); cape.frustumCulled = false; cape.userData.noInk = true;
-  return { seat, waist, head, armR, armL, cape, capeG, capeC, capeR, plumes, mats, seed: rnd(100), edge: V3(1, 0, 0), prevTip: V3(), restL: V3(0.14, 0.12, 0.3) };
+  return { seat, waist, head, armR, armL, cape, capeG, capeC, capeR, plumes, mats, faceM, look, seed: rnd(100), edge: V3(1, 0, 0), prevTip: V3(), restL: V3(0.14, 0.12, 0.3) };
 }
 function updateCape(R, t, wind) {
   const p = R.capeG.attributes.position.array, cols = R.capeC, rows = R.capeR, seg = 1.15 / (rows - 1);

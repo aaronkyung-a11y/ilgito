@@ -167,19 +167,17 @@ const TEX = (() => {
     const t = new T.CanvasTexture(c); if (rep) { t.wrapS = t.wrapT = T.RepeatWrapping; } t.anisotropy = 4; return t;
   };
   const r = mulberry(99);
-  // lamellar (찰갑): rows of small plates, each a flat fill with an ink edge, a shadow under the row above and one highlight tick
+  // lamellar (찰갑): rows of plates read as a quiet pattern — one flat fill, a soft edge and a thin shadow band under the row above
   const lamellar = mk(256, 256, (g, W, H) => {
     const pw = W / 8, ph = H / 6;
-    g.fillStyle = '#565656'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#8c8c8c'; g.fillRect(0, 0, W, H);
     g.lineJoin = 'round'; g.lineCap = 'round';
     for (let row = 6; row >= -1; row--) for (let c = -1; c < 9; c++) {
       const x = c * pw + (row % 2 ? pw / 2 : 0), y = row * ph, x0 = x + 0.8, x1 = x + pw - 0.8, y1 = y + ph * 1.2, rr = pw * 0.34;
       const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.lineTo(x1, y1 - rr); g.quadraticCurveTo(x1, y1, x1 - rr, y1); g.lineTo(x0 + rr, y1); g.quadraticCurveTo(x0, y1, x0, y1 - rr); g.closePath(); };
-      path(); g.fillStyle = (c + row) % 2 ? '#dcdcdc' : '#d0d0d0'; g.fill();
-      g.save(); path(); g.clip(); g.fillStyle = '#a4a4a4'; g.fillRect(x, y, pw, ph * 0.2); g.restore();
-      path(); g.strokeStyle = '#565656'; g.lineWidth = 2.2; g.stroke();
-      g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x0 + pw * 0.24, y + ph * 0.36); g.lineTo(x0 + pw * 0.24, y + ph * 0.74); g.stroke();
-      g.fillStyle = '#565656'; g.fillRect(x + pw * 0.56, y + ph * 0.42, 2.4, 2.4); g.fillRect(x + pw * 0.56, y + ph * 0.66, 2.4, 2.4);
+      path(); g.fillStyle = '#e4e4e4'; g.fill();
+      g.save(); path(); g.clip(); g.fillStyle = '#c2c2c2'; g.fillRect(x, y, pw, ph * 0.16); g.restore();
+      path(); g.strokeStyle = '#8c8c8c'; g.lineWidth = 1.6; g.stroke();
     }
   }, true);
   // hair for beards and hair caps: a flat tone with a few bold strands
@@ -214,67 +212,6 @@ const TEX = (() => {
   const css = (c) => '#' + new T.Color(c).getHexString();
   const cache = {};
   const memo = (key, make) => cache[key] || (cache[key] = make());
-  // face, drawn as line art over flat skin. SphereGeometry maps the front of the head to u = 0.25 (x = 128 here); canvas left = the general's right
-  function face(look) {
-    return memo('f' + [look.skin, look.hair, look.beard, look.patch, look.scar, look.helm === 'crown'].join(), () => mk(1024, 512, (g) => {
-      const W = 512, H = 256; g.scale(2, 2);
-      const skin = new T.Color(look.skin || 0xdcab82), hair = css(look.hair || 0x1c1614), cx = 128, ink = '#22120c';
-      const sk = (m, red) => '#' + skin.clone().multiplyScalar(m).lerp(new T.Color(0xb04a34), red || 0).getHexString();
-      g.lineCap = 'round'; g.lineJoin = 'round';
-      g.fillStyle = sk(1); g.fillRect(0, 0, W, H);
-      // flat shadow shapes: under the brow, down one side of the nose, under the lip, along the jaw
-      g.fillStyle = sk(0.8, 0.12);
-      [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 6, 101); g.quadraticCurveTo(cx + k * 26, 95, cx + k * 46, 94); g.quadraticCurveTo(cx + k * 44, 104, cx + k * 30, 106); g.quadraticCurveTo(cx + k * 16, 107, cx + k * 6, 110); g.closePath(); g.fill(); });
-      g.beginPath(); g.moveTo(cx + 2, 106); g.lineTo(cx + 10, 140); g.lineTo(cx + 15, 147); g.lineTo(cx + 4, 149); g.closePath(); g.fill();
-      g.beginPath(); g.moveTo(cx - 13, 179); g.quadraticCurveTo(cx, 186, cx + 13, 179); g.quadraticCurveTo(cx, 181, cx - 13, 179); g.fill();
-      g.beginPath(); g.moveTo(cx - 62, 150); g.quadraticCurveTo(cx - 50, 196, cx - 20, 212); g.lineTo(cx + 20, 212); g.quadraticCurveTo(cx + 50, 196, cx + 62, 150); g.lineTo(cx + 70, 256); g.lineTo(cx - 70, 256); g.closePath(); g.fill();
-      // hair on the sides and back
-      g.fillStyle = hair; g.beginPath(); g.moveTo(232, 0); g.quadraticCurveTo(222, 80, 226, 128); g.quadraticCurveTo(232, 150, 222, 172); g.lineTo(236, 256); g.lineTo(W, 256); g.lineTo(W, 0); g.closePath(); g.fill();
-      g.beginPath(); g.moveTo(24, 0); g.quadraticCurveTo(34, 80, 30, 128); g.quadraticCurveTo(24, 150, 34, 172); g.lineTo(20, 256); g.lineTo(0, 256); g.lineTo(0, 0); g.closePath(); g.fill();
-      [-1, 1].forEach((k) => {
-        const ex = cx + k * 27, ey = 112;
-        g.save(); g.translate(ex, ey); g.rotate(k * -0.17);
-        g.fillStyle = '#f6efe2'; g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.fill();
-        g.save(); g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.clip();
-        g.fillStyle = '#5a2c14'; g.beginPath(); g.arc(-k * 1.2, -0.8, 5.6, 0, TAU); g.fill();
-        g.fillStyle = '#120806'; g.beginPath(); g.arc(-k * 1.2, -0.8, 2.9, 0, TAU); g.fill();
-        g.fillStyle = sk(0.7, 0.1); g.fillRect(-14, -9, 28, 4.6);         // the lid's shadow on the eye
-        g.restore();
-        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(-k * 1.2 + 2.2, -2.6, 1.3, 0, TAU); g.fill();
-        g.strokeStyle = ink; g.lineWidth = 3.2; g.beginPath(); g.moveTo(-14, 2); g.quadraticCurveTo(0, -9.5, 14, -2); g.lineTo(16.5, -4.5); g.stroke();   // upper lid with a flick
-        g.lineWidth = 1.3; g.beginPath(); g.moveTo(2, 5.2); g.quadraticCurveTo(8, 4.6, 12.5, 0.5); g.stroke();
-        g.restore();
-        // brow: thick at the nose, sweeping up and out to a point
-        g.fillStyle = hair; g.beginPath(); g.moveTo(cx + k * 6, 103); g.quadraticCurveTo(cx + k * 22, 90, cx + k * 49, 86); g.quadraticCurveTo(cx + k * 30, 97, cx + k * 9, 108.5); g.closePath(); g.fill();
-        // cheekbone stroke
-        g.strokeStyle = sk(0.62, 0.2); g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + k * 42, 132); g.quadraticCurveTo(cx + k * 36, 140, cx + k * 27, 143); g.stroke();
-      });
-      // frown lines, nostrils, mouth
-      g.strokeStyle = ink; g.lineWidth = 1.5;
-      g.beginPath(); g.moveTo(cx - 3.5, 97); g.lineTo(cx - 2.5, 105); g.moveTo(cx + 3.5, 97); g.lineTo(cx + 2.5, 105); g.stroke();
-      g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx - 9, 146.5); g.quadraticCurveTo(cx - 6, 150, cx - 2.5, 147.5); g.moveTo(cx + 9, 146.5); g.quadraticCurveTo(cx + 6, 150, cx + 2.5, 147.5); g.stroke();
-      g.lineWidth = 2.8; g.beginPath(); g.moveTo(cx - 17, 171); g.quadraticCurveTo(cx - 8, 166.5, cx, 168); g.quadraticCurveTo(cx + 8, 166.5, cx + 17, 171); g.stroke();
-      g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 19, 168.5); g.lineTo(cx - 21, 173); g.moveTo(cx + 19, 168.5); g.lineTo(cx + 21, 173); g.stroke();
-      if (look.beard) {
-        g.fillStyle = hair;
-        [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 1, 156); g.quadraticCurveTo(cx + k * 14, 153, cx + k * 29, 168 + (look.beard === 2 ? 9 : 2)); g.quadraticCurveTo(cx + k * 14, 162, cx + k * 1, 163); g.closePath(); g.fill(); });   // moustache
-        g.beginPath(); g.moveTo(cx - 54, 148); g.quadraticCurveTo(cx - 46, 196, cx - 16, 212); g.lineTo(cx + 16, 212); g.quadraticCurveTo(cx + 46, 196, cx + 54, 148);
-        g.quadraticCurveTo(cx + 36, 180, cx + 14, 184); g.quadraticCurveTo(cx, 177, cx - 14, 184); g.quadraticCurveTo(cx - 36, 180, cx - 54, 148); g.fill();
-        g.beginPath(); g.moveTo(cx - 5, 178); g.lineTo(cx + 5, 178); g.lineTo(cx + 3, 192); g.lineTo(cx - 3, 192); g.closePath(); g.fill();
-        g.fillRect(cx - 30, 206, 60, 50);
-      }
-      if (look.patch) {
-        g.fillStyle = '#0e0b0a'; g.beginPath(); g.ellipse(cx + 27, 111, 20, 14, -0.1, 0, TAU); g.fill();
-        g.strokeStyle = '#0e0b0a'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx - 70, 70); g.lineTo(cx + 27, 108); g.lineTo(cx + 100, 122); g.stroke();
-        g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2; g.beginPath(); g.moveTo(cx + 13, 84); g.lineTo(cx + 18, 94); g.moveTo(cx + 38, 128); g.lineTo(cx + 42, 138); g.stroke();
-      }
-      if (look.scar) { g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx - 44, 96); g.lineTo(cx - 30, 150); g.stroke(); }
-      if (look.helm === 'crown') {   // bare-headed: hair over the crown with a widow's peak
-        g.fillStyle = hair; g.beginPath(); g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, 70); g.lineTo(232, 70);
-        g.quadraticCurveTo(190, 50, cx + 8, 62); g.lineTo(cx, 71); g.lineTo(cx - 8, 62); g.quadraticCurveTo(66, 50, 24, 70); g.lineTo(0, 70); g.closePath(); g.fill();
-      }
-    }));
-  }
   // cape: flat colour, an ink edge and a gold key-pattern border
   function cape(color, trim) {
     return memo('c' + color + ',' + trim, () => mk(256, 256, (g, W, H) => {
@@ -299,5 +236,5 @@ const TEX = (() => {
       for (let x = 27; x < W - 20; x += 19) for (let y = 27; y < H - 20; y += 19) { g.beginPath(); g.moveTo(x, y - 3.8); g.lineTo(x + 3.8, y); g.lineTo(x, y + 3.8); g.lineTo(x - 3.8, y); g.fill(); }
     }));
   }
-  return { lamellar, hair: hairT, hairA, shadow, feather, face, cape, blanket };
+  return { lamellar, hair: hairT, hairA, shadow, feather, cape, blanket };
 })();

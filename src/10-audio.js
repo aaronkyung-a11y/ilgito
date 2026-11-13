@@ -353,6 +353,13 @@ function makeAudio(ctx) {
       st.nextT += stepDur(); st.step++;
     }
   };
+  // shouts. Voice clips are looked up by prefix: vp* (the hero), ve* (the enemy general), with L for a long cry and D for a death cry.
+  // Until such clips are embedded this stays silent.
+  A.voice = (who, kind) => {
+    const pre = 'v' + who + (kind === 'die' ? 'D' : kind ? 'L' : ''), names = Object.keys(bufs).filter((n) => n.indexOf(pre) === 0 && (kind || !/^v.[LD]/.test(n)));
+    if (!names.length) return;
+    play(names[(Math.random() * names.length) | 0], { gain: kind ? 0.95 : 0.75, rate: (who === 'e' ? 0.94 : 1) * (0.97 + Math.random() * 0.06), pan: who === 'e' ? 0 : 0.05, rev: 0.22 });
+  };
   // offline rendering helpers (the test harness uses these to "look at" the sound)
   A.at = (t, fn) => { const s = shift; shift = t; try { fn(); } finally { shift = s; } };
   A.pump = (t0, t1, mode, inten) => { st.mode = mode; st.step = 0; st.nextT = t0; st.inten = inten || 0; let g = 0; while (st.nextT < t1 && g++ < 4000) { schedule(st.step, st.nextT); st.nextT += stepDur(); st.step++; } };
@@ -382,7 +389,7 @@ const Snd = (() => {
   function setOn(v) { on = v; if (eng) eng.master.gain.setTargetAtTime(v ? 0.85 : 0, ctx.currentTime, 0.03); }
   const ok = () => eng && on && eng.isReady() && (ctx.state === 'running' || (ctx.state === 'suspended' && performance.now() < warmUntil));
   const api = { init, resume, suspend, setOn, isOn: () => on, errs: () => errLog.concat(eng ? eng.errs() : []), state: () => (ctx ? ctx.state : 'none'), ready: () => !!(eng && eng.isReady()) };
-  ['swing', 'clang', 'block', 'perfect', 'hit', 'hurt', 'glint', 'hoof', 'jingle', 'snort', 'gong', 'horn', 'cheer', 'setWind', 'superStart', 'finisher', 'breakSfx', 'wipe', 'ui', 'heartbeat', 'fanfare', 'hitDrum', 'update'].forEach((k) => {
+  ['swing', 'clang', 'block', 'perfect', 'hit', 'hurt', 'glint', 'hoof', 'jingle', 'snort', 'gong', 'horn', 'cheer', 'setWind', 'superStart', 'finisher', 'breakSfx', 'wipe', 'ui', 'heartbeat', 'fanfare', 'hitDrum', 'voice', 'update'].forEach((k) => {
     api[k] = function () { if (!ok()) return; try { eng[k].apply(null, arguments); } catch (e) { if (errLog.length < 20) errLog.push(k + ': ' + (e && e.message)); } };
   });
   api.setMode = (m) => { pendingMode = m; if (eng && eng.isReady()) { try { eng.setMode(m); } catch (e) { if (errLog.length < 20) errLog.push('mode: ' + e.message); } } };

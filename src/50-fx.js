@@ -70,7 +70,94 @@ const F2 = (() => {
   function num(x, y, text, color, size) { nums.push({ x, y, text, color: color || '#eadfc8', size: size || 20, t: 0, dur: 0.7, vx: rnd(-18, 18) }); if (nums.length > 16) nums.shift(); }
   function setSpeed(v) { speed = v; }
   function startWipe(text, sub, mid, done) { wipe.on = true; wipe.t = 0; wipe.text = text; wipe.sub = sub || ''; wipe.mid = mid; wipe.done = done; wipe.midFired = false; }
-  function clear() { pops.length = streaks.length = bursts.length = nums.length = 0; flashA = 0; wipe.on = false; speed = 0; }
+  function clear() { pops.length = streaks.length = bursts.length = nums.length = 0; flashA = 0; wipe.on = false; speed = 0; kiais.length = 0; cut.on = false; focusA = focusHold = impT = 0; if (glFilter) glCv.style.filter = glFilter = ''; }
+  // ── anime layer: focus lines (집중선), impact frames, shout balloons and cut-in bands
+  const glCv = $('gl'), kiais = [], cut = { on: false, t: 0 };
+  let focusA = 0, focusHold = 0, focusX = 0.5, focusY = 0.42, impT = 0, impDur = 1, impInv = true, glFilter = '';
+  function focus(v, x, y, hold) { if (REDUCED) v *= 0.5; focusA = Math.max(focusA, v); if (x !== undefined) { focusX = x; focusY = y; } focusHold = Math.max(focusHold, hold || 0); }
+  // a few frames of stark black-and-white: first inverted, then hard contrast
+  function impact(dur, x, y) { if (REDUCED) return; impT = impDur = dur || 0.1; if (x !== undefined) { focusX = x; focusY = y; } }
+  function kiai(text, o) {
+    o = o || {};
+    kiais.push({ text, x: o.x === undefined ? 0.5 : o.x, y: o.y === undefined ? 0.3 : o.y, px: !!o.px, size: o.size || 11, t: 0, dur: o.dur || 0.6, rot: o.rot === undefined ? rnd(-0.2, 0.2) : o.rot, color: o.color || '#141010', fill: o.fill || '#fffdf4', seed: (Math.random() * 1e6) | 0 });
+    if (kiais.length > 4) kiais.shift();
+  }
+  // o: { art (canvas from FACE.cutin), rgb, text, sub, side (1: face on the left, -1: on the right), dur, y, mode: 'face' | 'eyes' }
+  function cutin(o) {
+    kiais.length = 0;
+    cut.on = true; cut.t = 0; cut.dur = o.dur || 0.85; cut.art = o.art; cut.rgb = o.rgb || '200,60,40'; cut.text = o.text || ''; cut.sub = o.sub || '';
+    cut.side = o.side || 1; cut.y = o.y === undefined ? 0.4 : o.y; cut.eyes = o.mode === 'eyes'; cut.seed = (Math.random() * 1e6) | 0;
+  }
+  function drawFocus(a, dark) {
+    const px = focusX * W, py = focusY * H, R = Math.hypot(W, H), m = Math.min(W, H), n = 72;
+    const r = mulberry(((tAll * 20) | 0) * 131 + 7);       // re-rolled 20 times a second, like drawings shot on twos
+    g.fillStyle = dark ? `rgba(14,10,10,${a})` : `rgba(255,252,244,${a})`;
+    g.beginPath();
+    for (let i = 0; i < n; i++) {
+      const ang = ((i + r() * 0.9) / n) * TAU, wv = 0.004 + r() * r() * 0.022, r0 = m * (0.34 + r() * 0.3) * (1.25 - 0.4 * Math.min(1, a));
+      g.moveTo(px + Math.cos(ang) * r0, py + Math.sin(ang) * r0);
+      g.lineTo(px + Math.cos(ang - wv) * R, py + Math.sin(ang - wv) * R);
+      g.lineTo(px + Math.cos(ang + wv) * R, py + Math.sin(ang + wv) * R);
+    }
+    g.fill();
+  }
+  function drawCutin(rdt) {
+    cut.t += rdt;
+    if (cut.t >= cut.dur) { cut.on = false; return; }
+    const open = EASE.out(sat(cut.t / 0.09)) * (1 - sat((cut.t - (cut.dur - 0.11)) / 0.11));
+    const bh = Math.max(H * 0.27, Math.min(W, H) * 0.36), sl = bh * 0.3 * cut.side, yc = cut.y * H, hh = bh * 0.5 * open, ang = -Math.atan2(2 * sl, W);
+    const yAt = (x) => yc + sl * (1 - (2 * x) / W);
+    g.fillStyle = `rgba(8,6,6,${0.4 * open})`; g.fillRect(0, 0, W, H);
+    g.save();
+    g.beginPath(); g.moveTo(-10, yAt(-10) - hh); g.lineTo(W + 10, yAt(W + 10) - hh); g.lineTo(W + 10, yAt(W + 10) + hh); g.lineTo(-10, yAt(-10) + hh); g.closePath(); g.clip();
+    const gr = g.createLinearGradient(cut.side > 0 ? 0 : W, 0, cut.side > 0 ? W : 0, 0);
+    gr.addColorStop(0, `rgb(${cut.rgb})`); gr.addColorStop(1, '#140e10');
+    g.fillStyle = gr; g.fillRect(0, yc - bh - Math.abs(sl), W, 2 * (bh + Math.abs(sl)));
+    const r = mulberry(cut.seed);
+    g.save(); g.translate(W / 2, yc); g.rotate(ang);      // streaks rushing along the band
+    for (let i = 0; i < 30; i++) {
+      const yy = (r() - 0.5) * bh * 1.25, len = W * (0.2 + r() * 0.6), sp = 1.6 + r() * 2.6, th = 1 + r() * r() * bh * 0.07, u = (r() + cut.t * sp) % 1;
+      g.fillStyle = i % 3 ? 'rgba(255,255,255,0.45)' : 'rgba(10,6,8,0.4)'; g.fillRect(lerp(-W, W, u) * -cut.side - len / 2, yy, len, th);
+    }
+    g.restore();
+    const C = FACE.CUT, sc = bh / (cut.eyes ? 60 : 126), fy = cut.eyes ? 108 : 139;
+    const xf = (cut.eyes ? W * 0.5 : W * (cut.side > 0 ? 0.36 : 0.64)) - cut.side * ((1 - EASE.out(sat(cut.t / 0.14))) * W * 0.7 - cut.t * 14);
+    g.save(); g.translate(xf, yAt(xf)); g.rotate(ang);
+    g.drawImage(cut.art, -(128 - C.x) * sc, -(fy - C.y) * sc, C.w * sc, C.h * sc);
+    g.restore();
+    g.restore();
+    g.strokeStyle = '#0e0b09'; g.lineWidth = Math.max(4, bh * 0.05);
+    g.beginPath(); g.moveTo(-10, yAt(-10) - hh); g.lineTo(W + 10, yAt(W + 10) - hh); g.moveTo(-10, yAt(-10) + hh); g.lineTo(W + 10, yAt(W + 10) + hh); g.stroke();
+    g.strokeStyle = `rgb(${cut.rgb})`; g.lineWidth = Math.max(1.5, bh * 0.014); const d = bh * 0.05;
+    g.beginPath(); g.moveTo(-10, yAt(-10) - hh - d); g.lineTo(W + 10, yAt(W + 10) - hh - d); g.moveTo(-10, yAt(-10) + hh + d); g.lineTo(W + 10, yAt(W + 10) + hh + d); g.stroke();
+    if (cut.text) {
+      const tx = cut.eyes ? W * 0.5 : W * (cut.side > 0 ? 0.74 : 0.26), fs0 = bh * (cut.eyes ? 0.34 : 0.4), pk = lerp(1.9, 1, EASE.out(sat((cut.t - 0.05) / 0.15)));
+      g.save(); g.translate(tx + Math.sin(tAll * 80) * fs0 * 0.02, yAt(tx) + (cut.eyes ? hh + fs0 * 0.75 : bh * 0.02)); g.rotate(ang - 0.05); g.globalAlpha = open * sat((cut.t - 0.04) / 0.05);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      let fs = fs0 * pk; g.font = `400 ${fs}px ${HD}`;
+      const tw = g.measureText(cut.text).width, maxW = W * (cut.eyes ? 0.9 : 0.5); if (tw > maxW) { fs *= maxW / tw; g.font = `400 ${fs}px ${HD}`; }
+      g.lineWidth = fs * 0.22; g.strokeStyle = '#0e0b09'; g.strokeText(cut.text, 0, 0); g.fillStyle = '#fffdf2'; g.fillText(cut.text, 0, 0);
+      if (cut.sub) { const ss = Math.max(15, fs0 * 0.34); g.font = `400 ${ss}px ${BR}`; g.lineWidth = ss * 0.24; g.strokeText(cut.sub, 0, fs * 0.74); g.fillStyle = '#ffd27a'; g.fillText(cut.sub, 0, fs * 0.74); }
+      g.restore();
+    }
+  }
+  function drawKiai(rdt) {
+    for (let i = kiais.length - 1; i >= 0; i--) {
+      const k = kiais[i]; k.t += rdt; const u = k.t / k.dur;
+      if (u >= 1) { kiais.splice(i, 1); continue; }
+      const sc = k.t < 0.07 ? lerp(0.3, 1.2, k.t / 0.07) : k.t < 0.14 ? lerp(1.2, 1, (k.t - 0.07) / 0.07) : 1 + (k.t - 0.14) * 0.06;
+      const fs = k.size * U * sc, sh = k.t < 0.3 ? fs * 0.035 : 0;
+      g.save(); g.translate((k.px ? k.x : k.x * W) + Math.sin(tAll * 95) * sh, (k.px ? k.y : k.y * H) + Math.cos(tAll * 83) * sh); g.rotate(k.rot); g.globalAlpha = u > 0.8 ? (1 - u) / 0.2 : 1;
+      g.font = `400 ${fs}px ${HD}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const tw = g.measureText(k.text).width, rx = tw * 0.5 + fs * 0.42, ry = fs * 0.74, n = 9 + Math.round(tw / fs) * 2, r = mulberry(k.seed);
+      g.beginPath();       // a spiky shout balloon
+      for (let j = 0; j < n * 2; j++) { const a = (j / (n * 2)) * TAU, rr = j % 2 ? 0.86 + r() * 0.08 : 1.2 + r() * 0.34, x = Math.cos(a) * rx * rr, y = Math.sin(a) * ry * rr; if (j) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.closePath(); g.fillStyle = k.fill; g.fill(); g.lineJoin = 'miter'; g.lineWidth = Math.max(2.5, fs * 0.07); g.strokeStyle = '#141010'; g.stroke();
+      g.fillStyle = k.color; g.fillText(k.text, 0, fs * 0.05);
+      g.restore();
+    }
+  }
+
 
   function drawIndicator(ind) {
     const R0 = clamp(Math.min(W, H) * 0.085, 30, 54);
@@ -132,6 +219,7 @@ const F2 = (() => {
         g.beginPath(); g.moveTo(cx + ca * r0, cy + sa * r0); g.lineTo(cx + ca * (r0 + len), cy + sa * (r0 + len)); g.stroke();
       }
     }
+    if (focusA > 0.02) { drawFocus(Math.min(1, focusA) * 0.85, false); if (focusHold > 0) focusHold -= rdt; else focusA = Math.max(0, focusA - rdt * 2.6); }
     if (ind) drawIndicator(ind);
     // slash streaks
     for (let i = streaks.length - 1; i >= 0; i--) {
@@ -202,6 +290,14 @@ const F2 = (() => {
       }
       g.restore();
     }
+    if (cut.on) drawCutin(rdt);
+    if (kiais.length) drawKiai(rdt);
+    if (impT > 0) {
+      impT -= rdt;
+      const inv = impT > impDur * 0.5, f = impT > 0 ? (inv ? 'grayscale(1) contrast(8) invert(1)' : 'grayscale(1) contrast(8)') : '';
+      if (f !== glFilter) glCv.style.filter = glFilter = f;
+      if (impT > 0) drawFocus(1, inv);
+    }
     // flash
     if (flashA > 0.004) { g.fillStyle = `rgba(${flashRGB},${Math.min(1, flashA)})`; g.fillRect(0, 0, W, H); flashA = Math.max(0, flashA - rdt * 4.5 - flashA * rdt * 5); }
     // ink wipe between rounds
@@ -229,5 +325,5 @@ const F2 = (() => {
       if (u >= 1) { wipe.on = false; if (wipe.done) wipe.done(); }
     }
   }
-  return { resize, pop, streak, burst, flash, num, setSpeed, startWipe, clear, draw, get W() { return W; }, get H() { return H; }, get wiping() { return wipe.on; } };
+  return { resize, pop, streak, burst, flash, num, setSpeed, startWipe, clear, draw, focus, impact, kiai, cutin, get W() { return W; }, get H() { return H; }, get wiping() { return wipe.on; } };
 })();

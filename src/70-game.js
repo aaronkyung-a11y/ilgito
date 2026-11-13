@@ -13,7 +13,7 @@ const G = {
   pPhase: 0, ePhase: 0, pGait: 0, eGait: 0, pGaitT: 0, eGaitT: 0, pRear: 0, eRear: 0, pRearT: 0, eRearT: 0, eToss: 0,
   round: 1, roundStrings: 3, stageIdx: 0, startIdx: 0, hero: HEROES[0], stage: STAGES[0],
   p: null, e: null, stats: null, q: [], su: null, tut: { on: false, froze: 0, seen: {} },
-  retries: 0, auto: false, autoSkill: { mu: 0.42, sd: 0.08, miss: 0.08, aim: 0.13, jit: 0.08, rate: 0.3, greed: 2 }, introT: 0, endT: 0, camFall: 0, needMotes: true, hbT: 0,
+  cut: null, retries: 0, auto: false, autoSkill: { mu: 0.42, sd: 0.08, miss: 0.08, aim: 0.13, jit: 0.08, rate: 0.3, greed: 2 }, introT: 0, endT: 0, camFall: 0, needMotes: true, hbT: 0,
 };
 function josa(w, a, b) { const c = w.charCodeAt(w.length - 1); if (c < 0xac00 || c > 0xd7a3) return a; return (c - 0xac00) % 28 ? a : b; }
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
@@ -27,6 +27,19 @@ const Game = (() => {
   const DIRS = ['L', 'R', 'U', 'D'];
   const DIRV = { L: [-1, 0], R: [1, 0], U: [0, 1], D: [0, -1] };
 
+  // ── anime direction: shouts, focus lines, cut-ins
+  function eShout(big, dir) {      // dir: where the parry marker is drawn, so the balloon keeps clear of it
+    const d = G.e.def, sc = Cam.project(Rig.headPos(_v)), W = F2.W, H = F2.H, side = dir === 'L' ? 1 : dir === 'R' ? -1 : sc.x < W / 2 ? 1 : -1;
+    F2.kiai(big ? d.roar : pick(d.kiai), { px: true, x: clamp(sc.x + side * W * (dir === 'U' ? 0.3 : 0.17), W * 0.25, W * 0.75), y: clamp(sc.y - H * (G.cut ? 0.25 : dir === 'U' ? -0.04 : 0.12), H * 0.12, H * 0.5), size: big ? 13 : 9.5, dur: big ? 1.1 : 0.6 });
+    Snd.voice('e', big);
+  }
+  function pShout(big) {
+    const h = G.hero;
+    F2.kiai(big ? h.shout : pick(h.kiai), { x: rnd(0.32, 0.68), y: rnd(0.66, 0.73), size: big ? 13 : 9, dur: big ? 1 : 0.5 });
+    Snd.voice('p', big);
+  }
+  function eFocus(v, hold) { const sc = Cam.project(Rig.headPos(_v)); F2.focus(v, sc.x / F2.W, sc.y / F2.H, hold); }
+  function heroCut(ex, text, sub, o) { F2.cutin(Object.assign({ art: FACE.cutin(G.hero.look, ex), rgb: G.hero.rgb, text, sub, side: 1 }, o)); }
   function newPlayer(h) { return { hp: h.hp, hpMax: h.hp, st: 100, ki: 0, guard: false, guardLock: 0, lock: 0, buf: null, combo: 0, comboT: 0, dirs: [], lastBlockDir: '', dead: false, stWait: 0 }; }
   function newEnemy(stage) {
     const ai = stage.ai;
@@ -36,7 +49,7 @@ const Game = (() => {
 
   // ── stage flow
   function toTitle() {
-    G.mode = 'title'; G.paused = false; G.q.length = 0; F2.clear(); FX.clear(); Input.cancel();
+    G.mode = 'title'; G.paused = false; G.q.length = 0; F2.clear(); FX.clear(); Input.cancel(); G.cut = null;
     G.timeScale = 1; G.slowT = 0; G.hitStop = 0; G.freeze = false; G.camFall = 0;
     const idx = Math.min(Save.d.cleared, STAGES.length - 1), stage = STAGES[idx];
     G.stage = stage;
@@ -56,7 +69,7 @@ const Game = (() => {
   }
   function startStage(idx) {
     G.stageIdx = idx; const stage = (G.stage = STAGES[idx]);
-    G.q.length = 0; F2.clear(); FX.clear(); Input.cancel();
+    G.q.length = 0; F2.clear(); FX.clear(); Input.cancel(); G.cut = null;
     World.applyPalette(PALS[stage.pal]); World.setArmy('foe', ARMY[stage.army]); World.setArmy('ally', ARMY.ally); VM.syncLights();
     Rig.build(stage);
     G.p = newPlayer(G.hero); G.e = newEnemy(stage);
@@ -79,8 +92,11 @@ const Game = (() => {
     Snd.setMode('intro'); Snd.gong();
     UI.showVs(G.stage, G.stageIdx);
     VM.rest(); VM.setBase('idle');
+    G.cut = { kind: 'low', t: 0, dur: 1.15, side: -1, next: { kind: 'face', t: 0, dur: 1.25, side: 1, expr: 'kiai' } };
+    after(1.3, () => { if (G.mode === 'intro') { eShout(true); F2.focus(0.9, 0.5, 0.36, 0.7); Snd.hitDrum(0.8); Cam.shake(0.35); } });
   }
   function beginDuel() {
+    G.cut = null;
     UI.show(null); UI.hud(true); Snd.cheer(1.6, 0.14);
     startCharge(true);
   }
@@ -88,6 +104,7 @@ const Game = (() => {
     G.mode = 'charge'; G.cT = 0; G.cV = first ? 3 : 13;
     if (!first) G.d = D_START;
     const e = G.e; e.state = 'charge'; e.atk = null; e.stringsDone = 0;
+    after(0.45, () => { if (G.mode !== 'charge') return; if (first) { heroCut('kiai', G.hero.shout, '', { mode: 'eyes', dur: 0.8, y: 0.64 }); Snd.voice('p', true); } else pShout(true); });
     G.roundStrings = 3 + (Math.random() < 0.4 ? 1 : 0);
     G.pGaitT = G.eGaitT = 1; G.psiT = 0; G.omega = 0;
     Rig.E.anim.play([{ p: EP.ready, d: 0.3, e: 'io' }]); Rig.E.heavy = 0;
@@ -152,6 +169,8 @@ const Game = (() => {
     E.anim.play([{ p: EP[atk.dir].w, d: Math.min(0.3, showT * 0.6), e: 'out' }]);
     E.glintT = 0.34; E.glintBig = atk.heavy ? 1.9 : 1; E.heavy = atk.heavy ? 1 : 0;
     Snd.glint(atk.heavy, atk.tHit - G.t);
+    if (atk.heavy) { eShout(true, atk.dir); eFocus(0.9, Math.max(0.2, atk.tHit - G.t - 0.15)); Cam.tilt(atk.dir === 'L' ? 0.15 : -0.15, atk.tHit - G.t); }
+    else if (charge || Math.random() < 0.3) eShout(!!charge, atk.dir);
     if (atk.heavy) {
       if (!Save.d.hv) { Save.d.hv = 1; Save.save(); UI.hint('危 — 막을 수 없다. 쳐내야만 한다!', 2.8); }
     }
@@ -189,6 +208,8 @@ const Game = (() => {
       World.skyFlash(0.5);
       stop(atk.charge ? 0.14 : 0.1); slow(0.2, atk.charge ? 0.6 : 0.36); Cam.shake(atk.charge ? 0.85 : 0.55); Cam.punch(-7); buzz(35);
       VM.kick(1.4, 0.3);
+      F2.impact(atk.charge ? 0.13 : 0.085, sc.x / F2.W, sc.y / F2.H); Cam.tilt(dv[0] ? dv[0] * -0.13 : 0.09, 0.25);
+      if (atk.charge || atk.heavy) pShout(true); else if (Math.random() < 0.5) pShout(false);
       G.stats.perfect++; addKi(14); p.combo++; p.comboT = 2.4;
       addPosture(atk.charge ? 40 : atk.heavy ? 50 : 34);
       if (atk.charge) { F2.pop('破', '선제 일격!', { size: 34, color: '#fff3d6', dur: 1.1 }); damageEnemy(16 * h.atk, atk.dir, true); Snd.cheer(2, 0.22); }
@@ -253,8 +274,11 @@ const Game = (() => {
     E.anim.play([{ p: EP.roar, d: 0.28, e: 'out' }, { p: EP.roar, d: 0.72, e: 'lin' }, { p: EP.guard, d: 0.3, e: 'io' }]);
     E.aura = 1; G.eRearT = 0.8; G.push.kick(3);
     Snd.horn(1, 0.7); Snd.snort(1, 0.2); Snd.hitDrum(1); Cam.shake(0.7);
-    F2.pop('怒', e.def.kr + josa(e.def.kr, '이', '가') + ' 격노했다!', { size: 30, color: '#ff4a2a', dur: 1.3 });
+    F2.pop('怒', e.def.kr + josa(e.def.kr, '이', '가') + ' 격노했다!', { size: 30, color: '#ff4a2a', dur: 1.3, y: 0.66 });
     F2.flash(0.3, '200,40,24');
+    G.cut = { kind: 'low', t: 0, dur: 0.62, side: 1, expr: 'rage', next: { kind: 'face', t: 0, dur: 0.62, side: -1, expr: 'rage' } };
+    F2.impact(0.1, 0.5, 0.4);
+    after(0.1, () => { if (!e.dead) { eShout(true); F2.focus(1, 0.5, 0.38, 1); } });
   }
   function addPosture(v) {
     const e = G.e;
@@ -267,6 +291,8 @@ const Game = (() => {
     e.state = 'broken'; e.stT = 0; e.stDur = 2.0; e.vuln = 1.3; e.atk = null; E.heavy = 0;
     E.anim.play([{ p: EP.stag, d: 0.22, e: 'out' }]);
     Snd.breakSfx(); Snd.cheer(2.2, 0.24); slow(0.3, 0.45); Cam.shake(0.65); G.eRearT = 0.3; G.push.kick(2.5);
+    eFocus(0.85, 0.35); F2.impact(0.1); Cam.tilt(0.17, 0.5);
+    G.cut = { kind: 'face', t: 0, dur: 0.38, side: 1, expr: 'hurt' };       // a beat on his face as his guard gives way
     F2.pop('崩', '자세가 무너졌다! 몰아쳐라', { size: 32, color: '#ffd27a', dur: 1.2 });
     if (G.tut.on) UI.hint('지금이다! 마구 베어라', 2.2);
   }
@@ -291,6 +317,7 @@ const Game = (() => {
     FX.sparkBurst(_cp, 10, 0.75); FX.shardBurst(_cp, 5, 0.85, 0.16, 0.1, Cam.right(_v).multiplyScalar(dv[0]));
     const sc = Cam.project(_cp); F2.burst(sc.x, sc.y, G.hero.rgb, 0.8);
     Snd.hit(1); stop(0.045); Cam.shake(0.26); Cam.punch(-2.5); buzz(12);
+    if (p.combo % 4 === 1) pShout(false);
     Rig.flinch(dir, 1); G.push.kick(1.1);
     if (label) F2.pop('', label, { size: 18, y: 0.28, color: '#ffd27a', dur: 0.55 });
     damageEnemy(dmg, dir);
@@ -330,6 +357,8 @@ const Game = (() => {
     e.dead = true; e.state = 'dead'; e.atk = null; G.mode = 'victory'; G.endT = 0; G.freeze = false;
     guard(false);
     stop(0.2); slow(0.12, 1.5); F2.flash(0.85); Cam.shake(1); Cam.punch(-10); buzz(140); World.skyFlash(0.9);
+    F2.impact(0.15, 0.5, 0.42); Cam.tilt(dir === 'L' ? 0.2 : -0.2, 0.9); Snd.voice('e', 'die');
+    after(0.05, () => heroCut('idle', '', '', { mode: 'eyes', dur: 1.0, y: 0.7 }));
     if (G.su && G.su.phase === 3) Snd.gong(); else Snd.finisher(true);
     Snd.cheer(4.5, 0.32); Snd.setMode('none');
     Cam.fwd(_v); _v.y = 0; _v.normalize();
@@ -417,7 +446,9 @@ const Game = (() => {
     e.atk = null; e.state = 'stun'; Rig.E.heavy = 0;
     Rig.E.anim.play([{ p: EP.stag, d: 0.2, e: 'out' }]);
     Snd.superStart(); Snd.setMode('super'); F2.flash(0.6, G.hero.rgb); Cam.shake(0.5); Cam.punch(9); buzz(60);
-    F2.pop(G.hero.superHj, G.hero.superKr + '!', { size: 24, color: '#fff3d6', dur: 1.1, y: 0.34, rot: -0.05 });
+    F2.pop(G.hero.superHj, G.hero.superKr + '!', { size: 24, color: '#fff3d6', dur: 1.1, y: 0.22, rot: -0.05 });
+    heroCut('kiai', G.hero.shout, '', { dur: 0.85, y: 0.5 }); Snd.voice('p', true);
+    F2.focus(1, 0.5, 0.42, 3); Cam.tilt(-0.11, 3);
     UI.hint('사방으로 마구 베어라!', 2.6);
   }
   function superSwipe(dir, x0, y0, x1, y1) {
@@ -447,6 +478,8 @@ const Game = (() => {
         VM.slash('D'); F2.streak(F2.W * 0.62, -F2.H * 0.1, F2.W * 0.34, F2.H * 1.05, G.hero.rgb, 3);
         Rig.chest(_cp); FX.sparkBurst(_cp, 70, 1.5); const sc = Cam.project(_cp); F2.burst(sc.x, sc.y, '255,244,214', 2.2);
         F2.flash(0.9); World.skyFlash(0.8); stop(0.18); slow(0.2, 0.7); Cam.shake(1); Cam.punch(-9); buzz(120);
+        F2.impact(0.13, sc.x / F2.W, sc.y / F2.H); Cam.tilt(0.22, 0.45);
+        G.cut = { kind: 'low', t: 0, dur: 0.55, side: -1, expr: 'hurt' };
         Snd.finisher(false); Snd.cheer(2.4, 0.26); Rig.flinch('D', 1.6); G.push.kick(5);
         F2.pop('斬', '', { size: 46, color: '#fff3d6', dur: 0.9, y: 0.34 });
         damageEnemy((16 + su.hits * 1.2) * G.hero.atk, 'D');
