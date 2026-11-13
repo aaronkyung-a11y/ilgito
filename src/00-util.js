@@ -44,11 +44,6 @@ const _a = V3(), _b = V3(), _c = V3(), _d = V3(), _e = V3();
 const _m4 = new T.Matrix4(), _q = new T.Quaternion();
 
 // material / mesh helpers (r128: Lambert is per-vertex, so flat look = non-indexed geometry)
-const ALLMATS = [];
-function mLam(color, o) { const m = new T.MeshLambertMaterial(Object.assign({ color }, o)); return m; }
-function mPhong(color, spec = 0x444444, shin = 40, o) {
-  return new T.MeshPhongMaterial(Object.assign({ color, specular: spec, shininess: shin, flatShading: true }, o));
-}
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.computeVertexNormals(); return n; }
 function mesh(g, m, x = 0, y = 0, z = 0, parent) {
   const o = new T.Mesh(g, m); o.position.set(x, y, z); if (parent) parent.add(o); return o;

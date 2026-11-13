@@ -2,8 +2,9 @@
 
 1인칭 시점 3D 기마 일기토. 말을 달려 적장과 맞붙고, 쳐내고, 무너뜨리고, 벤다.
 three.js r128 위에서 도는 단일 HTML 게임이다. 모델·질감은 코드로 만들고, 소리는 실제 녹음 샘플을 내장했다.
+v0.3부터 그림은 셀 셰이딩(단계 음영 + 먹선 외곽선)이다.
 
-- 플레이: <https://aaronkyung-a11y.github.io/ilgito/> (GitHub Pages를 켠 뒤)
+- 플레이: <https://aaronkyung-a11y.github.io/ilgito/> (`main` 브랜치의 판)
 - 최신 릴리스: `index.html` — 홈 화면에 설치할 수 있는 PWA 판
 - 버전별 스냅샷: `versions/ilgito-v0.x.html` — 파일 하나로 열리는 판(three.js는 cdnjs에서 받는다)
 - 변경 기록과 검증 내용: `CHANGELOG.md`

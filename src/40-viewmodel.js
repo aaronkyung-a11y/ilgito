@@ -19,9 +19,6 @@ const EYE_H = 2.5;
 const VM = (() => {
   const scene = new T.Scene();
   const cam = new T.PerspectiveCamera(70, 1, 0.03, 40);
-  const hemi = new T.HemisphereLight(0xffffff, 0x444444, 0.9), sun = new T.DirectionalLight(0xffffff, 1), fill = new T.DirectionalLight(0xffffff, 0.3);
-  scene.add(hemi, sun, sun.target, fill, fill.target);
-  fill.position.set(0, 2, 4);
   const level = new T.Group(); level.rotation.order = 'ZXY'; scene.add(level);
   const yaw = new T.Group(); level.add(yaw);
   const rig = new T.Group(); scene.add(rig);
@@ -31,11 +28,12 @@ const VM = (() => {
   const trail = new Trail(20, 0xffffff, 0.2); scene.add(trail.mesh);
   const recoil = new Spring(260, 20), recoilY = new Spring(200, 18);
   let slashT = 0, slashDelay = 0, kx = 1, base = 'idle', guardOn = false;
-  const skinM = mLam(0xd7a57c), sleeveM = new T.MeshLambertMaterial({ color: 0x2f6b48, map: TEX.cloth }), reinM = mLam(0x3a261a);
-  const bracerM = new T.MeshPhongMaterial({ color: 0x8a7a4a, specular: 0x3a342c, shininess: 22, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.006 }), cuffM = goldMat();
+  const skinM = toonMat({ color: 0xdcab82, env: 'V', key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }), sleeveM = toonMat({ color: 0x2f6b48, env: 'V', key: KEY, rim: 0.4 }), reinM = toonMat({ color: 0x5a3a22, env: 'V', key: KEY, rim: 0 });
+  const bracerM = toonMat({ color: 0x8a7a4a, map: TEX.lamellar, env: 'V', key: KEY, spec: 0.35, shin: 14, rim: 0.7 }), cuffM = goldMat('V');
   const arm = (k, right) => {
     const a = makeArm(right, 0.31, 0.3, { sleeve: sleeveM, bracer: bracerM, gold: cuffM, skin: skinM });
     rig.add(a.up, a.lo, a.hand);
+    [a.up, a.lo, a.hand].forEach((n) => addInk(n, INK_V));
     return { S: V3(k * 0.21, -0.34, 0.08), E: V3(), H: V3(), k, up: a.up, lo: a.lo, hand: a.hand, pole: V3(k * 0.6, -0.8, 0.5).normalize() };
   };
   const aR = arm(1, true), aL = arm(-1, false);
@@ -43,23 +41,19 @@ const VM = (() => {
   const restL = V3(-0.15, -0.52, -0.38);
 
   function setHero(h) {
-    const junk = (o) => o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L) n.geometry.dispose(); if (n.material && n.material.dispose) n.material.dispose(); });
+    const junk = (o) => o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
     if (horse) { yaw.remove(horse.root); junk(horse.root); }
     if (weapon) { rig.remove(weapon.g); junk(weapon.g); }
-    horse = makeHorse(h.horse);
+    horse = makeHorse(h.horse, { env: 'V' });
     horse.root.position.set(0, -EYE_H - 0.16, -0.1);
-    yaw.add(horse.root);
-    weapon = makeWeapon(h.weapon, h.weaponOpt);
-    rig.add(weapon.g);
-    sleeveM.color.set(h.sleeve); bracerM.color.set(h.bracer);
+    yaw.add(horse.root); addInk(horse.root, INK_V);
+    weapon = makeWeapon(h.weapon, Object.assign({ env: 'V' }, h.weaponOpt));
+    rig.add(weapon.g); addInk(weapon.g, INK_V);
+    sleeveM.color.copy(celC(h.sleeve, 0.72)); bracerM.color.copy(celC(h.bracer, 0.6));
     trail.setColor(h.trail);
     anim.snap(VP.idle); base = 'idle';
   }
-  function syncLights() {
-    hemi.color.copy(World.hemi.color); hemi.groundColor.copy(World.hemi.groundColor); hemi.intensity = World.hemi.intensity;
-    sun.color.copy(World.sun.color); sun.intensity = World.sun.intensity;
-    fill.color.copy(World.fill.color); fill.intensity = World.fill.intensity + 0.15;
-  }
+  function syncLights() {}   // the toon environment (TOON.V) is filled by World.applyPalette
   function slash(dir, fast) {
     const sp = VP[dir], k = fast ? 0.7 : 1;
     anim.play([{ p: sp.s, d: 0.035 * k, e: 'out2' }, { p: sp.e, d: 0.12 * k, e: 'in2' }, { p: sp.e, d: 0.05 * k, e: 'lin' }, { p: VP[guardOn ? 'guard' : base], d: 0.2, e: 'io' }]);
@@ -129,7 +123,7 @@ const VM = (() => {
       trail.push(tA, tB);
     }
     trail.update(dt);
-    sun.position.copy(World.sunDir).applyQuaternion(s.invQ).multiplyScalar(10);
+    TOON.V.sun.value.copy(World.sunDir).applyQuaternion(s.invQ);
   }
   return { scene, cam, setHero, syncLights, slash, slashAt, setGuard, setBase, kick, hurt, raise, cheer, drop, rest, update, get guarding() { return guardOn; } };
 })();

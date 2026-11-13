@@ -92,6 +92,7 @@ const Main = (() => {
   function resize() {
     const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
     renderer.setPixelRatio(PR); renderer.setSize(w, h, false);
+    TOON.res.value.set(w * PR, h * PR); TOON.px.value = 1.5 * PR;      // ink line: 1.5 CSS px
     Cam.resize(w, h);
     VM.cam.aspect = w / h; VM.cam.fov = Cam.baseFov; VM.cam.updateProjectionMatrix();
     F2.resize(w, h);

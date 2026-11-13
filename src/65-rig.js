@@ -19,7 +19,7 @@ const Rig = (() => {
     if (!E) return;
     [E.root, E.trail.mesh, E.rider.seat, E.fallSh].forEach((o) => {
       if (o.parent) o.parent.remove(o);
-      o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L && n.geometry !== REIN_G) n.geometry.dispose(); if (n.material && n.material.dispose) n.material.dispose(); });
+      o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L && n.geometry !== REIN_G) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
     });
     E = null;
   }
@@ -29,6 +29,7 @@ const Rig = (() => {
     rider.waist.add(weapon.g);
     rider.seat.position.set(0, horse.saddleY, -0.04); rider.seat.scale.setScalar(1.12); horse.body.add(rider.seat);
     const root = new T.Group(); root.add(horse.root); root.scale.setScalar(stage.scale || 1);
+    addInk(root, INK_W);
     World.scene.add(root);
     const trail = new Trail(16, 0xff6a3a, 0.14); World.scene.add(trail.mesh);
     const fallSh = mesh(new T.PlaneGeometry(2.0, 2.0), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false, color: 0x000000 }), 0, 0.03, 0, World.scene);

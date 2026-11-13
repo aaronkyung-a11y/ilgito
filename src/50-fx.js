@@ -1,6 +1,6 @@
 // ───────────────────────── fx: world particles + 2D brush layer ─────────────────────────
 const FX = (() => {
-  const sparks = new Particles(460, true, 0.08);
+  const sparks = new Particles(460, true, 0.08, 1);
   const dust = new Particles(280, false, 0.0);
   dust.points.renderOrder = 5; sparks.points.renderOrder = 6;
   World.scene.add(dust.points, sparks.points);
@@ -12,22 +12,22 @@ const FX = (() => {
       if (dir) { vx += dir.x * 3.5 * power; vy += dir.y * 3.5 * power; vz += dir.z * 3.5 * power; }
       const hot = Math.random();
       sparks.emit(p.x + rnd(-0.05, 0.05), p.y + rnd(-0.05, 0.05), p.z + rnd(-0.05, 0.05), vx, vy, vz,
-        rnd(0.25, 0.8), rnd(0.03, 0.085), 1, 0.5 + hot * 0.45, 0.12 + hot * 0.55, 1, 12, 1.3, 0);
+        rnd(0.25, 0.8), rnd(0.05, 0.14), 1, 0.5 + hot * 0.45, 0.12 + hot * 0.55, 1, 12, 1.3, 0);
     }
-    sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.1, 0.3 * power, 1, 0.92, 0.75, 0.7, 0, 0, 0.5 * power);
+    sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.11, 0.34 * power, 1, 0.95, 0.82, 0.85, 0, 0, 0.5 * power);     // the impact star
   }
   function shardBurst(p, n, r, g, b, dir) {
     for (let i = 0; i < n; i++) {
       const sp = rnd(1.5, 6);
       sparks.emit(p.x, p.y, p.z, rnd(-1, 1) * sp + (dir ? dir.x * 3 : 0), rnd(0.2, 1.2) * sp, rnd(-1, 1) * sp + (dir ? dir.z * 3 : 0),
-        rnd(0.3, 0.7), rnd(0.05, 0.11), r, g, b, 0.9, 11, 0.8, 0);
+        rnd(0.3, 0.7), rnd(0.1, 0.22), r, g, b, 0.9, 11, 0.8, 0);
     }
   }
   function dustBurst(p, n, spread, up, big) {
     const c = World.dust; big = big || 1;
     for (let i = 0; i < n; i++) {
       dust.emit(p.x + rnd(-spread, spread), rnd(0.1, 0.5), p.z + rnd(-spread, spread), rnd(-1.4, 1.4) * big, rnd(0.3, 1.5) * up, rnd(-1.4, 1.4) * big,
-        rnd(0.9, 2.1), rnd(0.5, 1.1) * big, c.r, c.g, c.b, rnd(0.12, 0.26), -0.12, 1.1, rnd(1.0, 2.3) * big);
+        rnd(0.8, 1.7), rnd(0.32, 0.72) * big, c.r, c.g, c.b, rnd(0.3, 0.5), -0.12, 1.1, rnd(0.6, 1.5) * big);
     }
   }
   function update(dt) { sparks.update(dt); dust.update(dt); }

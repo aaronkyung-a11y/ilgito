@@ -1,6 +1,8 @@
 // ───────────────────────── models: weapons, horse, rider (v0.2 — lofted forms, painted textures) ─────────────────────────
-function steelMat(c) { return new T.MeshPhongMaterial({ color: c, specular: 0xffffff, shininess: 110, flatShading: true, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.4 }); }
-function goldMat() { return new T.MeshPhongMaterial({ color: 0xd2a850, specular: 0xfff0b0, shininess: 55, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.22 }); }
+// characters are lit mostly by a key light fixed to the camera, so faces and armour keep a readable light side
+const KEY = 0.6;
+function steelMat(c, env) { return toonMat({ color: c, flat: true, env, key: KEY, edge: -0.02, spec: 1, shin: 20, rim: 1, rimCut: 0.5 }); }
+function goldMat(env) { return toonMat({ color: 0xdcae4a, env, key: KEY, edge: 0.12, hi: 0.18, spec: 0.9, shin: 18, specCol: 0xfff7d2, rim: 0.9 }); }
 // a hanging tuft of hair (root at the origin, falls along -y); meant for the alpha-tested hair texture
 function tuftG(len, r) { return loftG(ringsY([[0, r * 0.3, r * 0.3, 0, 0, 1, 0], [-len * 0.16, r * 0.8, r * 0.8, 0, 0, 1, 0.16], [-len * 0.55, r, r, 0, 0, 1, 0.55], [-len, r * 0.85, r * 0.85, 0, 0, 1, 1]]), 9, { cap: false, ur: 2 }); }
 // a fist closed round a shaft that runs along local x through the origin. +y: from the wrist to the knuckles. right hand; left = mirrored in z
@@ -23,22 +25,22 @@ const FIST_R = fistG(false), FIST_L = fistG(true);
 const BLADE_TEX = {};
 function bladeTex(type, shapes) {
   if (BLADE_TEX[type]) return BLADE_TEX[type];
-  const W = 256, H = 512, X0 = -0.34, XW = 0.68, Y0 = -0.02, YH = 0.82, rr = mulberry(7);
+  const W = 256, H = 512, X0 = -0.34, XW = 0.68, Y0 = -0.02, YH = 0.82;
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  g.fillStyle = '#aeb6be'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#b8c0c8'; g.fillRect(0, 0, W, H);
   const px = (x) => ((x - X0) / XW) * W, py = (y) => H - ((y - Y0) / YH) * H;
   shapes.forEach((sp) => {
     const pts = sp.s.getPoints(14); let cx = 0, cy = 0; pts.forEach((p) => { cx += p.x; cy += p.y; }); cx /= pts.length; cy /= pts.length;
     const path = (k) => { g.beginPath(); pts.forEach((p, i) => { const x = px(cx + (p.x - cx) * k), y = py(cy + (p.y - cy) * k); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath(); };
     g.save(); path(1); g.clip();
-    const gr = g.createLinearGradient(0, py(0.8), 0, py(0)); gr.addColorStop(0, '#eef2f5'); gr.addColorStop(0.55, '#b4bdc6'); gr.addColorStop(1, '#8a949e');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 160; i++) { const x = rr() * W, y = rr() * H, l = 6 + rr() * 22; g.strokeStyle = `rgba(${rr() < 0.5 ? '255,255,255' : '50,60,72'},${0.05 + rr() * 0.1})`; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x, y); g.lineTo(x + l, y - l * 0.35); g.stroke(); }
+    g.fillStyle = '#c4ccd4'; g.fillRect(0, 0, W, H);
     if (sp.b !== 0) {
+      g.fillStyle = '#eef2f6';        // two diagonal glints across the flat
+      for (let q = 0; q < 2; q++) { const y0 = py(cy) + (q ? 34 : -46), wd = q ? 9 : 26; g.beginPath(); g.moveTo(0, y0 + 60); g.lineTo(W, y0 - 60); g.lineTo(W, y0 - 60 + wd); g.lineTo(0, y0 + 60 + wd); g.closePath(); g.fill(); }
       g.lineJoin = 'round';
-      path(1); g.strokeStyle = 'rgba(56,66,80,0.85)'; g.lineWidth = 15; g.stroke();
-      path(1); g.strokeStyle = 'rgba(250,252,255,0.95)'; g.lineWidth = 11.5; g.stroke();
-      path(0.46); g.strokeStyle = 'rgba(56,66,80,0.5)'; g.lineWidth = 1.6; g.stroke();
+      path(1); g.strokeStyle = '#3c4654'; g.lineWidth = 16; g.stroke();
+      path(1); g.strokeStyle = '#ffffff'; g.lineWidth = 11.5; g.stroke();
+      path(0.46); g.strokeStyle = 'rgba(60,70,84,0.7)'; g.lineWidth = 1.8; g.stroke();
     }
     g.restore();
   });
@@ -48,9 +50,10 @@ function bladeTex(type, shapes) {
 function makeWeapon(type, o) {
   o = o || {};
   const g = new T.Group();
-  const shaftM = new T.MeshPhongMaterial({ color: o.shaft || 0x40281a, specular: 0x6a5a48, shininess: 34 });
-  const steelM = steelMat(o.steel || 0xdfe5ea), goldM = goldMat();
-  const redM = new T.MeshLambertMaterial({ color: o.tassel || 0xc8321e, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide });
+  const env = o.env || 'W';
+  const shaftM = toonMat({ color: celC(o.shaft || 0x40281a, 0.75), env, key: KEY, spec: 0.35, shin: 14, specCol: 0xd8c8b0, rim: 0.5 });
+  const steelM = steelMat(o.steel || 0xe6ecf1, env), goldM = goldMat(env);
+  const redM = toonMat({ color: o.tassel || 0xd2351f, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.15, rim: 0.2 });
   const D = { glaive: { top: 1.1, butt: -0.72 }, spear: { top: 1.44, butt: -0.78 }, serpent: { top: 1.36, butt: -0.78 }, halberd: { top: 1.32, butt: -0.78 } }[type];
   const len = D.top - D.butt;
   mesh(new T.CylinderGeometry(0.0205, 0.0235, len, 10), shaftM, 0, (D.top + D.butt) / 2, 0, g);
@@ -103,7 +106,7 @@ function makeWeapon(type, o) {
     bg.translate(0, 0, b > 0 ? -0.003 : -0.008);
     S.add(flat(bg), M4(0, D.top, 0));
   });
-  steelM.map = bladeTex(type, shapes);
+  const bt = bladeTex(type, shapes); bt.updateMatrix(); steelM.defines.T_MAP = ''; steelM.uniforms.map = { value: bt }; steelM.uniforms.uUvT = { value: bt.matrix };
   S.mesh(steelM, g); G.mesh(goldM, g);
   mesh(tuftG(type === 'spear' ? 0.27 : 0.22, type === 'spear' ? 0.085 : 0.062), redM, 0, D.top - 0.07, 0, g);
   return { g, type, tipY: D.top + bladeLen, baseY: D.top - 0.05, steelM };
@@ -152,18 +155,19 @@ const REIN_G = segG(0.007, 0.007, 4);
 function makeHorse(pal, o) {
   o = o || {};
   const mats = [], reg = (m) => { mats.push(m); return m; };
-  const cc = hex(pal.coat), pale = cc.r * 0.3 + cc.g * 0.59 + cc.b * 0.11 > 0.5;
+  const cc = celC(pal.coat, 0.68), pale = cc.r * 0.3 + cc.g * 0.59 + cc.b * 0.11 > 0.62;
   const rel = (c) => { const t = hex(c); return [Math.min(4, t.r / Math.max(0.03, cc.r)), Math.min(4, t.g / Math.max(0.03, cc.g)), Math.min(4, t.b / Math.max(0.03, cc.b))]; };
   const mix3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)], ONE = [1, 1, 1];
-  const ptsC = pale ? rel(mixHex(pal.coat, 0x7a746a, 0.3)) : rel(mixHex(pal.coat, 0x0c0a09, 0.74));      // dark "points" on the lower legs
-  const hoofC = rel(pale ? 0x4a443c : 0x1a1512), muzC = rel(mixHex(pal.coat, pale ? 0x8a7f78 : 0x0c0a09, 0.55));
-  const coat = reg(new T.MeshPhongMaterial({ color: pal.coat, specular: 0x2c2824, shininess: 14, vertexColors: true, map: TEX.coat }));
-  const hairM = reg(new T.MeshLambertMaterial({ color: pal.mane, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide }));
-  const clothM = reg(new T.MeshLambertMaterial({ map: TEX.blanket(pal.cloth, pal.trim || 0xd2a850), side: T.DoubleSide }));
-  const leather = reg(new T.MeshLambertMaterial({ color: 0x7a4c2c, map: TEX.leather, side: T.DoubleSide }));
-  const gold = reg(goldMat());
-  const redM = reg(new T.MeshLambertMaterial({ color: pal.tassel || 0xc8321e, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide }));
-  const eyeM = reg(new T.MeshPhongMaterial({ color: 0x0c0907, specular: 0xffffff, shininess: 80 }));
+  const ptsC = pale ? rel(mixHex(cc, 0x8a8478, 0.3)) : rel(mixHex(cc, 0x16110f, 0.7));      // dark "points" on the lower legs
+  const hoofC = rel(pale ? 0x5a544c : 0x241c18), muzC = rel(mixHex(cc, pale ? 0x9a8f88 : 0x16110f, 0.5));
+  const env = o.env || 'W';
+  const coat = reg(toonMat({ color: cc, vcol: true, env, key: KEY, edge: 0.04, hi: 0.12, hiEdge: 0.78, rim: 0.7 }));
+  const hairM = reg(toonMat({ color: celC(pal.mane, 0.8), map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.1, rim: 0.3 }));
+  const clothM = reg(toonMat({ map: TEX.blanket(celC(pal.cloth, 0.72).getHex(), pal.trim || 0xd2a850), side: T.DoubleSide, env, key: KEY, rim: 0.25 }));
+  const leather = reg(toonMat({ color: 0x8a5630, side: T.DoubleSide, env, key: KEY, rim: 0.3 }));
+  const gold = reg(goldMat(env));
+  const redM = reg(toonMat({ color: pal.tassel || 0xd2351f, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.15, rim: 0.2 }));
+  const eyeM = reg(toonMat({ color: 0x100b08, env, key: KEY, spec: 1, shin: 40, rim: 0 }));
   const root = new T.Group();
   const rear = new T.Group(); rear.position.set(0, 0.55, -0.62); root.add(rear);
   const body = new T.Group(); body.position.set(0, -0.55, 0.62); rear.add(body);
@@ -196,6 +200,7 @@ function makeHorse(pal, o) {
   DK.mesh(eyeM, head);
   const earG = tintG(loftG(ringsY([[0, 0.032, 0.02], [0.05, 0.036, 0.018], [0.11, 0.024, 0.012], [0.165, 0.004, 0.003]]), 8), () => 0.86);
   const earL = mesh(earG, coat, 0.058, -0.045, -0.088, head), earR = mesh(earG, coat, -0.058, -0.045, -0.088, head);
+  earL.userData.dyn = earR.userData.dyn = true;
   earL.rotation.x = earR.rotation.x = rad(-100);
   mesh(surfG((u, v, out) => { const y = lerp(-0.09, 0.2, v), p = seP(rowAt(HD, y), (u - 0.5) * 1.5, HD_E, 0.013); out[0] = p[0]; out[1] = y; out[2] = p[1]; }, 3, 4), hairM, 0, 0, 0, head);   // forelock
   // bridle
@@ -240,8 +245,8 @@ function makeHorse(pal, o) {
     }, 12, 7));
   });
   if (pal.barding) {
-    const met = reg(new T.MeshPhongMaterial({ color: hex(pal.bardMetal || 0x55504a).multiplyScalar(1.3), specular: 0x9a9a9a, shininess: 40, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.012, side: T.DoubleSide }));
-    const plate = reg(new T.MeshPhongMaterial({ color: pal.bardMetal || 0x55504a, specular: 0xaaaaaa, shininess: 60, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.15, side: T.DoubleSide }));
+    const met = reg(toonMat({ color: celC(pal.bardMetal || 0x55504a, 0.6), map: TEX.lamellar, side: T.DoubleSide, env, key: KEY, spec: 0.3, shin: 16, rim: 0.7 }));
+    const plate = reg(toonMat({ color: celC(pal.bardMetal || 0x55504a, 0.66), side: T.DoubleSide, env, key: KEY, spec: 0.8, shin: 22, rim: 0.9 }));
     mesh(surfG((u, v, out) => { const y = lerp(-0.05, 0.5, v), p = seP(rowAt(HD, y), (u - 0.5) * 1.9 * lerp(1, 0.8, v), HD_E, 0.014); out[0] = p[0]; out[1] = y; out[2] = p[1]; }, 8, 6), plate, 0, 0, 0, head);   // chanfron
     const f = rowAt(HD, 0.06); BG.add(new T.SphereGeometry(0.03, 8, 6), M4(0, 0.06, f[3] - f[2] - 0.016, 0, 0, 0, 1, 1, 0.5));
     mesh(loftG(ringsY(NK.filter((r) => r[0] > -0.06 && r[0] < 0.8).map((r) => [r[0], r[1] + 0.018, r[2] + 0.018, r[3]])), 14, { cap: false, ur: 3, vr: 2.4 }), met, 0, 0, 0, neck);   // crinet
@@ -268,7 +273,7 @@ function makeHorse(pal, o) {
   const tail2 = new T.Group(); tail2.position.y = -0.48; tail.add(tail2);
   mesh(loftG(ringsY([[0.03, 0.097, 0.078, 0, 0, 1, 0.38], [-0.2, 0.105, 0.08, 0, 0, 1, 0.58], [-0.42, 0.095, 0.07, 0, 0, 1, 0.8], [-0.64, 0.075, 0.05, 0, 0, 1, 1]]), 10, { ur: 3, cap: false }), hairM, 0, 0, 0, tail2);
   let reins = null;
-  if (o.reins) { reins = []; for (let i = 0; i < 4; i++) reins.push(mesh(REIN_G, leather, 0, 0, 0, body)); }
+  if (o.reins) { reins = []; for (let i = 0; i < 4; i++) { const rn = mesh(REIN_G, leather, 0, 0, 0, body); rn.userData.noInk = true; reins.push(rn); } }
   if (o.shadow) {
     const sh = mesh(new T.PlaneGeometry(2.0, 3.8), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false, color: 0x000000 }), 0, 0.035, -0.05, root);
     sh.rotation.x = -PI / 2; sh.renderOrder = -1;
@@ -359,19 +364,19 @@ function makeArm(right, L1, L2, M) {
 // rider look: { armor, armor2, cloth, sash, skin, hair, cape, plume, helm:'plume'|'horn'|'crown', beard:0|1|2, patch, scale }
 function makeRider(look) {
   const mats = [], reg = (m) => { mats.push(m); return m; };
-  const armor = reg(new T.MeshPhongMaterial({ color: hex(look.armor).multiplyScalar(1.45), specular: 0x4c443a, shininess: 26, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.012, side: T.DoubleSide }));
-  const armor2 = reg(new T.MeshPhongMaterial({ color: look.armor2 || 0x2a2622, specular: 0x9a9a9a, shininess: 55, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.14 }));
-  const cloth = reg(new T.MeshLambertMaterial({ color: look.cloth, map: TEX.cloth }));
-  const sash = reg(new T.MeshLambertMaterial({ color: look.sash || 0xc8321e, map: TEX.cloth, side: T.DoubleSide }));
-  const skin = reg(new T.MeshLambertMaterial({ color: look.skin || 0xd7a57c }));
-  const faceM = reg(new T.MeshLambertMaterial({ map: TEX.face(look) }));
+  const armor = reg(toonMat({ color: celC(look.armor, 0.6), map: TEX.lamellar, side: T.DoubleSide, key: KEY, edge: 0.08, spec: 0.35, shin: 14, rim: 0.75 }));
+  const armor2 = reg(toonMat({ color: celC(look.armor2 || 0x2a2622, 0.72), key: KEY, edge: 0.1, spec: 0.85, shin: 22, specCol: 0xe8eef6, rim: 0.9 }));
+  const cloth = reg(toonMat({ color: celC(look.cloth, 0.68), key: KEY, rim: 0.4 }));
+  const sash = reg(toonMat({ color: celC(look.sash || 0xc8321e, 0.82), side: T.DoubleSide, key: KEY, rim: 0.4 }));
+  const skin = reg(toonMat({ color: look.skin || 0xdcab82, key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
+  const faceM = reg(toonMat({ map: TEX.face(look), key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
   const gold = reg(goldMat());
-  const boot = reg(new T.MeshLambertMaterial({ color: 0x2a1e18, map: TEX.leather }));
-  const hairM = reg(new T.MeshLambertMaterial({ color: look.hair || 0x15110f, map: TEX.hair, side: T.DoubleSide }));
-  const capeM = reg(new T.MeshLambertMaterial({ map: TEX.cape(look.cape, look.capeTrim || 0xd2a850), side: T.DoubleSide }));
-  const capeP = reg(new T.MeshLambertMaterial({ color: look.cape }));
+  const boot = reg(toonMat({ color: 0x3a2a22, key: KEY, spec: 0.3, shin: 14, specCol: 0xb8a898, rim: 0.4 }));
+  const hairM = reg(toonMat({ color: look.hair || 0x1c1614, map: TEX.hair, side: T.DoubleSide, key: KEY, rim: 0.3 }));
+  const capeM = reg(toonMat({ map: TEX.cape(celC(look.cape, 0.7).getHex(), look.capeTrim || 0xd2a850), side: T.DoubleSide, key: KEY, edge: 0.0, rim: 0.2 }));
+  const capeP = reg(toonMat({ color: celC(look.cape, 0.7), key: KEY, rim: 0.3 }));
   const crown = look.helm === 'crown';
-  const plumeM = reg(new T.MeshLambertMaterial({ color: crown ? 0xffffff : look.plume || 0xc8321e, map: crown ? TEX.feather : TEX.hairA, alphaTest: crown ? 0 : 0.5, side: T.DoubleSide }));
+  const plumeM = reg(toonMat({ color: crown ? 0xffffff : look.plume || 0xc8321e, map: crown ? TEX.feather : TEX.hairA, alphaTest: crown ? 0 : 0.5, side: T.DoubleSide, key: KEY, edge: -0.15, rim: 0.25 }));
   // seat: pelvis, legs, skirts (fixed to the saddle)
   const seat = new T.Group();
   const C = new Merge(), A = new Merge(), G = new Merge(), B = new Merge(), A2 = new Merge(), SS = new Merge();
@@ -429,7 +434,7 @@ function makeRider(look) {
     hG.add(latheG([[0.118, 0.066], [0.125, 0.071], [0.125, 0.094], [0.118, 0.099]], 18), M4(0, 0, 0.002, -0.12, 0, 0, 0.84, 1, 0.93));
     hG.add(latheG([[0.05, 0.0], [0.058, 0.012], [0.046, 0.04], [0.062, 0.062], [0.05, 0.07]], 12), M4(0, 0.135, -0.025));
     for (let i = 0; i < 3; i++) hG.add(new T.ConeGeometry(0.014, 0.06, 5), M4(Math.sin((i - 1) * 0.9) * 0.055, 0.225, -0.025 + Math.cos((i - 1) * 0.9) * 0.055));
-    mesh(new T.SphereGeometry(0.03, 8, 6), reg(new T.MeshLambertMaterial({ color: 0xc8321e })), 0, 0.245, -0.025, head);
+    mesh(new T.SphereGeometry(0.03, 8, 6), reg(toonMat({ color: 0xd2351f, key: KEY })), 0, 0.245, -0.025, head);
     [1, -1].forEach((k) => {
       let parent = head; const chain = [];
       for (let i = 0; i < 6; i++) {
@@ -470,7 +475,7 @@ function makeRider(look) {
   const armR = arm(-1, true), armL = arm(1, false);
   // cape
   const capeC = 7, capeR = 9, capeG = new T.PlaneGeometry(0.86, 1.2, capeC - 1, capeR - 1);
-  const cape = mesh(capeG, capeM, 0, 0, 0, waist); cape.frustumCulled = false;
+  const cape = mesh(capeG, capeM, 0, 0, 0, waist); cape.frustumCulled = false; cape.userData.noInk = true;
   return { seat, waist, head, armR, armL, cape, capeG, capeC, capeR, plumes, mats, seed: rnd(100), edge: V3(1, 0, 0), prevTip: V3(), restL: V3(0.14, 0.12, 0.3) };
 }
 function updateCape(R, t, wind) {

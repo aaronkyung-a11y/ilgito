@@ -41,7 +41,7 @@
       if (!c || !window.MessageChannel) return;
       var ch = new MessageChannel();
       ch.port1.onmessage = function (e) {
-        if (!e.data || !e.data.v || e.data.v === 'v0.2.1') return;
+        if (!e.data || !e.data.v || e.data.v === 'v0.3.0') return;
         var b = document.getElementById('btnUpdate');
         if (b) b.classList.remove('hidden');
       };
@@ -283,7 +283,7 @@ button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
       <button class="go" id="btnGo"><span class="hj">出陣</span><b>출진</b></button>
     </div>
     <div class="t-foot">
-      <div class="kills-wrap"><span>격파</span><div class="kills" id="kills" aria-label="격파한 적장"></div><span id="ver">v0.2.1</span></div>
+      <div class="kills-wrap"><span>격파</span><div class="kills" id="kills" aria-label="격파한 적장"></div><span id="ver">v0.3.0</span></div>
       <button class="ghost" id="btnSnd" aria-pressed="true">소리 켬</button>
     </div>
     <div class="pwa">
@@ -375,11 +375,6 @@ const _a = V3(), _b = V3(), _c = V3(), _d = V3(), _e = V3();
 const _m4 = new T.Matrix4(), _q = new T.Quaternion();
 
 // material / mesh helpers (r128: Lambert is per-vertex, so flat look = non-indexed geometry)
-const ALLMATS = [];
-function mLam(color, o) { const m = new T.MeshLambertMaterial(Object.assign({ color }, o)); return m; }
-function mPhong(color, spec = 0x444444, shin = 40, o) {
-  return new T.MeshPhongMaterial(Object.assign({ color, specular: spec, shininess: shin, flatShading: true }, o));
-}
 function flat(g) { const n = g.index ? g.toNonIndexed() : g; n.computeVertexNormals(); return n; }
 function mesh(g, m, x = 0, y = 0, z = 0, parent) {
   const o = new T.Mesh(g, m); o.position.set(x, y, z); if (parent) parent.add(o); return o;
@@ -854,9 +849,10 @@ const Snd = (() => {
 
 // ───────────────────────── particles & trails ─────────────────────────
 const uPScale = { value: 600 }; // px per metre at 1m (set on resize)
-function partMat(additive, soft) {
+// shape: 0 = flat disc with a crisp edge (dust, motes), 1 = four-point star (sparks)
+function partMat(additive, soft, shape) {
   return new T.ShaderMaterial({
-    uniforms: { uScale: uPScale, uSoft: { value: soft } },
+    uniforms: { uScale: uPScale, uSoft: { value: soft }, uShape: { value: shape || 0 } },
     vertexShader: `
       attribute float aSize; attribute vec4 aColor; varying vec4 vColor; uniform float uScale;
       void main(){
@@ -866,10 +862,11 @@ function partMat(additive, soft) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      varying vec4 vColor; uniform float uSoft;
+      varying vec4 vColor; uniform float uSoft; uniform float uShape;
       void main(){
-        float d = length(gl_PointCoord - 0.5);
-        float a = smoothstep(0.5, uSoft, d) * vColor.a;
+        vec2 q = abs(gl_PointCoord - 0.5) * 2.0;
+        float d = uShape > 0.5 ? (pow(q.x, 0.55) + pow(q.y, 0.55)) * 0.5 : length(q) * 0.5;
+        float a = smoothstep(0.5, max(uSoft, 0.42), d) * vColor.a;
         if (a < 0.004) discard;
         gl_FragColor = vec4(vColor.rgb, a);
       }`,
@@ -878,7 +875,7 @@ function partMat(additive, soft) {
   });
 }
 class Particles {
-  constructor(n, additive, soft) {
+  constructor(n, additive, soft, shape) {
     this.n = n; this.i = 0; this.dirty = true;
     this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 4); this.size = new Float32Array(n);
     this.vel = new Float32Array(n * 3); this.life = new Float32Array(n); this.max = new Float32Array(n);
@@ -887,7 +884,7 @@ class Particles {
     g.setAttribute('position', new T.BufferAttribute(this.pos, 3).setUsage(T.DynamicDrawUsage));
     g.setAttribute('aColor', new T.BufferAttribute(this.col, 4).setUsage(T.DynamicDrawUsage));
     g.setAttribute('aSize', new T.BufferAttribute(this.size, 1).setUsage(T.DynamicDrawUsage));
-    this.points = new T.Points(g, partMat(additive, soft));
+    this.points = new T.Points(g, partMat(additive, soft, shape));
     this.points.frustumCulled = false;
   }
   emit(x, y, z, vx, vy, vz, life, size, r, g, b, a, grav = 0, drag = 0, grow = 0) {
@@ -945,8 +942,12 @@ class Trail {
       vertexShader: `attribute float aAlpha; attribute float aEdge; varying float vA; varying float vE;
         void main(){ vA = aAlpha; vE = aEdge; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `uniform vec3 uColor; uniform float uGain; varying float vA; varying float vE;
-        void main(){ float e = vE * vE; gl_FragColor = vec4(mix(uColor, vec3(1.0), e * 0.75), vA * (0.12 + 0.88 * e) * uGain); }`,
-      transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending, fog: false,
+        void main(){
+          // cel look: a white blade edge, a flat band of the trail colour behind it, hard steps between
+          float core = smoothstep(0.9, 0.94, vE), b2 = smoothstep(0.62, 0.66, vE), b1 = smoothstep(0.3, 0.34, vE), cut = smoothstep(0.05, 0.22, vA);
+          gl_FragColor = vec4(mix(mix(uColor, vec3(1.0), 0.35 * b2), vec3(1.0), core), cut * (0.2 * b1 + 0.2 * b2 + 0.52 * core) * uGain);
+        }`,
+      transparent: true, depthWrite: false, side: T.DoubleSide, fog: false,
     });
     this.mesh = new T.Mesh(g, this.mat);
     this.mesh.frustumCulled = false;
@@ -981,6 +982,232 @@ class Trail {
   clear() { this.s.length = 0; this.mesh.visible = false; }
 }
 
+// ───────────────────────── toon: cel shading and ink outlines (v0.3) ─────────────────────────
+// Every surface is shaded in flat steps (shade / lit / a small highlight step) and wrapped in an ink line.
+// Two light environments: W = the world scene, V = the first-person view model (which lives in camera space).
+function toonEnv() {
+  return { sun: { value: V3(0.3, 0.6, -0.7).normalize() }, lit: { value: hex(0xffffff) }, shade: { value: hex(0x8a84a8) }, rim: { value: hex(0xffffff) }, ink: { value: hex(0x1a1210) } };
+}
+const TOON = { W: toonEnv(), V: toonEnv(), res: { value: new T.Vector2(800, 800) }, px: { value: 1.6 } };
+// palette colours were chosen for soft lighting; flat shading wants them lifted (dark ones gain the most)
+function celC(c, g) { const k = hex(c); g = g || 0.72; k.r = Math.pow(k.r, g); k.g = Math.pow(k.g, g); k.b = Math.pow(k.b, g); return k; }
+
+const TOON_VS = `
+#include <common>
+#include <fog_pars_vertex>
+varying vec3 vN;
+varying vec3 vV;
+#ifdef T_MAP
+  uniform mat3 uUvT;
+  varying vec2 vUv;
+#endif
+#ifdef T_VCOL
+  attribute vec3 color;
+#endif
+#if defined(T_VCOL) || defined(USE_INSTANCING_COLOR)
+  varying vec3 vCol;
+#endif
+void main() {
+  #include <beginnormal_vertex>
+  #include <defaultnormal_vertex>
+  #include <begin_vertex>
+  #include <project_vertex>
+  vN = transformedNormal;
+  vV = -mvPosition.xyz;
+  #ifdef T_MAP
+    vUv = (uUvT * vec3(uv, 1.0)).xy;
+  #endif
+  #if defined(T_VCOL) || defined(USE_INSTANCING_COLOR)
+    vCol = vec3(1.0);
+  #endif
+  #ifdef T_VCOL
+    vCol *= color;
+  #endif
+  #ifdef USE_INSTANCING_COLOR
+    vCol *= instanceColor;
+  #endif
+  #include <fog_vertex>
+}`;
+const TOON_FS = `
+#include <common>
+#include <fog_pars_fragment>
+uniform vec3 diffuse;
+uniform vec3 emissive;
+uniform vec3 uSun;       // direction to the sun, in the scene's world space
+uniform vec3 uLit;       // tint of lit areas
+uniform vec3 uShade;     // tint of shaded areas (a colour, not just darker)
+uniform vec3 uRim;       // rim light colour
+uniform vec4 uP;         // x: terminator, y: softness, z: highlight step, w: highlight gain
+uniform vec4 uS;         // x: specular strength, y: shininess, z: rim strength, w: rim cut
+uniform vec3 uSpecCol;
+uniform float uK;        // 0 = lit by the real sun, 1 = lit by a key light fixed to the camera (keeps faces readable)
+varying vec3 vN;
+varying vec3 vV;
+#ifdef T_MAP
+  uniform sampler2D map;
+  varying vec2 vUv;
+#endif
+#if defined(T_VCOL) || defined(USE_INSTANCING_COLOR)
+  varying vec3 vCol;
+#endif
+void main() {
+  vec4 base = vec4(diffuse, 1.0);
+  #ifdef T_MAP
+    base *= texture2D(map, vUv);
+  #endif
+  #ifdef ALPHATEST
+    if (base.a < ALPHATEST) discard;
+  #endif
+  #if defined(T_VCOL) || defined(USE_INSTANCING_COLOR)
+    base.rgb *= vCol;
+  #endif
+  #ifdef T_FLAT
+    vec3 N = normalize(cross(dFdx(vV), dFdy(vV)));
+  #else
+    vec3 N = normalize(vN);
+    #ifdef DOUBLE_SIDED
+      N *= gl_FrontFacing ? 1.0 : -1.0;
+    #endif
+  #endif
+  vec3 V = normalize(vV);
+  vec3 Ls = normalize((viewMatrix * vec4(uSun, 0.0)).xyz);
+  vec3 L = normalize(mix(Ls, vec3(0.42, 0.56, 0.71), uK));
+  float ndl = dot(N, L);
+  float band = smoothstep(uP.x - uP.y, uP.x + uP.y, ndl);
+  float hi = smoothstep(uP.z - uP.y, uP.z + uP.y, ndl);
+  vec3 col = base.rgb * mix(uShade, uLit, band) * (1.0 + hi * uP.w);
+  // one crisp highlight shape
+  float nh = max(dot(N, normalize(L + V)), 0.0);
+  float sp = smoothstep(0.46, 0.54, pow(nh, uS.y)) * uS.x * band;
+  col = mix(col, uSpecCol, sp);
+  // rim: a thin bright edge on the side that faces the real sun
+  float fr = 1.0 - max(dot(N, V), 0.0);
+  float rim = smoothstep(uS.w, uS.w + 0.045, fr) * smoothstep(-0.3, 0.3, dot(N, Ls)) * uS.z;
+  col = mix(col, uRim * (0.55 + 0.45 * base.rgb), rim);
+  col += emissive;
+  gl_FragColor = vec4(col, 1.0);
+  #include <fog_fragment>
+}`;
+// o: color, map, vcol, flat, side, alphaTest, env ('W'|'V'), key (0..1), edge, soft, hiEdge, hi, spec, shin, specCol, rim, rimCut, fog
+function toonMat(o) {
+  o = o || {};
+  const world = (o.env || 'W') === 'W', env = TOON[world ? 'W' : 'V'], defs = {};
+  if (o.map) defs.T_MAP = '';
+  if (o.vcol) defs.T_VCOL = '';
+  if (o.flat) defs.T_FLAT = '';
+  const u = {
+    diffuse: { value: hex(o.color === undefined ? 0xffffff : o.color) }, emissive: { value: hex(0x000000) },
+    uSun: env.sun, uLit: env.lit, uShade: env.shade, uRim: env.rim,
+    uP: { value: new T.Vector4(o.edge === undefined ? 0.06 : o.edge, o.soft === undefined ? 0.018 : o.soft, o.hiEdge === undefined ? 0.74 : o.hiEdge, o.hi || 0) },
+    uS: { value: new T.Vector4(o.spec || 0, o.shin || 30, o.rim === undefined ? 0.5 : o.rim, o.rimCut === undefined ? 0.62 : o.rimCut) },
+    uSpecCol: { value: hex(o.specCol === undefined ? 0xffffff : o.specCol) },
+    uK: { value: o.key === undefined ? 0 : o.key },
+    fogColor: { value: new T.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 },
+  };
+  if (o.map) { o.map.updateMatrix(); u.map = { value: o.map }; u.uUvT = { value: o.map.matrix }; }
+  const m = new T.ShaderMaterial({ uniforms: u, defines: defs, vertexShader: TOON_VS, fragmentShader: TOON_FS, side: o.side || T.FrontSide, fog: world && o.fog !== false });
+  if (o.flat) m.extensions.derivatives = true;
+  if (o.alphaTest) m.alphaTest = o.alphaTest;
+  m.color = u.diffuse.value; m.emissive = u.emissive.value;
+  return m;
+}
+
+// ── ink: the mesh drawn again inside-out, pushed out along its normals by a fixed number of pixels
+const INK_VS = `
+#include <common>
+#include <fog_pars_vertex>
+uniform vec2 uRes;
+uniform float uPx;
+uniform vec2 uW;         // x: width scale, y: smallest width factor far away
+void main() {
+  #include <beginnormal_vertex>
+  #include <defaultnormal_vertex>
+  #include <begin_vertex>
+  #include <project_vertex>
+  // sit a hair behind the surface (0.4% of the distance) so a sheet's own shell never fights it for depth.
+  // (a slope-scaled polygon offset would throw the edge-on shell faces behind the far ground instead)
+  mvPosition.xyz *= 1.004;
+  gl_Position = projectionMatrix * mvPosition;
+  vec3 n = normalize(transformedNormal);
+  float w = max(gl_Position.w, 0.001);
+  float px = uPx * uW.x * clamp(7.0 / w, uW.y, 1.0);
+  gl_Position.xy += n.xy * (px * 2.0 * w) / uRes;
+  #include <fog_vertex>
+}`;
+const INK_FS = `
+#include <common>
+#include <fog_pars_fragment>
+uniform vec3 uInk;
+void main() {
+  gl_FragColor = vec4(uInk, 1.0);
+  #include <fog_fragment>
+}`;
+function inkMat(o) {
+  o = o || {};
+  const world = (o.env || 'W') === 'W';
+  const m = new T.ShaderMaterial({
+    uniforms: { uInk: TOON[world ? 'W' : 'V'].ink, uRes: TOON.res, uPx: TOON.px, uW: { value: new T.Vector2(o.w || 1, o.far === undefined ? 0.34 : o.far) }, fogColor: { value: new T.Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 } },
+    vertexShader: INK_VS, fragmentShader: INK_FS, side: T.BackSide, fog: world,
+  });
+  m.userData.keep = true;
+  return m;
+}
+const INK_W = inkMat({ env: 'W' }), INK_V = inkMat({ env: 'V' }), INK_FAR = inkMat({ env: 'W', w: 1.15, far: 0.62 });
+const _iv = V3(), _im = new T.Matrix3();
+// one welded shell for several pieces: vertices that share a position share one averaged normal, so hard edges do not split the line
+function inkGeo(parts) {
+  const P = [], N = [], I = [], seen = new Map();
+  for (let q = 0; q < parts.length; q++) {
+    const g = parts[q].g, m = parts[q].m, pos = g.attributes.position, nor = g.attributes.normal, ix = g.index, cnt = ix ? ix.count : pos.count;
+    const flip = m && m.determinant() < 0, local = new Int32Array(pos.count).fill(-1);
+    if (m) _im.getNormalMatrix(m);
+    const vid = (k) => {
+      if (local[k] >= 0) return local[k];
+      _iv.fromBufferAttribute(pos, k); if (m) _iv.applyMatrix4(m);
+      const key = Math.round(_iv.x * 2500) + '_' + Math.round(_iv.y * 2500) + '_' + Math.round(_iv.z * 2500);
+      let id = seen.get(key);
+      if (id === undefined) { id = P.length / 3; seen.set(key, id); P.push(_iv.x, _iv.y, _iv.z); N.push(0, 0, 0); }
+      _iv.fromBufferAttribute(nor, k); if (m) _iv.applyMatrix3(_im).normalize();
+      N[id * 3] += _iv.x; N[id * 3 + 1] += _iv.y; N[id * 3 + 2] += _iv.z;
+      return (local[k] = id);
+    };
+    for (let k = 0; k < cnt; k += 3) {
+      const a = vid(ix ? ix.getX(k) : k), b = vid(ix ? ix.getX(k + 1) : k + 1), c = vid(ix ? ix.getX(k + 2) : k + 2);
+      if (a === b || b === c || a === c) continue;
+      if (flip) I.push(a, c, b); else I.push(a, b, c);
+    }
+  }
+  for (let i = 0; i < N.length; i += 3) { const l = Math.hypot(N[i], N[i + 1], N[i + 2]); if (l > 1e-6) { N[i] /= l; N[i + 1] /= l; N[i + 2] /= l; } else { N[i] = 0; N[i + 1] = 1; N[i + 2] = 0; } }
+  const out = new T.BufferGeometry();
+  out.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+  out.setAttribute('normal', new T.Float32BufferAttribute(N, 3));
+  out.setIndex(I);
+  return out;
+}
+// give every rigid group under root one ink shell made from its own solid meshes.
+// skipped: cut-out hair cards (alphaTest), transparent things, meshes marked userData.noInk. userData.dyn = the mesh itself moves, so it gets its own shell
+function addInk(root, mat) {
+  const nodes = [];
+  root.traverse((n) => nodes.push(n));
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i], parts = [];
+    if (n.userData.ink) continue;
+    for (let j = 0; j < n.children.length; j++) {
+      const c = n.children[j], m = c.material;
+      if (!c.isMesh || c.isInstancedMesh || c.userData.ink || c.userData.noInk || !m || m.alphaTest > 0 || m.transparent || !c.geometry.attributes.normal) continue;
+      if (c.userData.dyn) { const s = new T.Mesh(inkGeo([{ g: c.geometry }]), mat); s.userData.ink = true; c.add(s); continue; }
+      c.updateMatrix(); parts.push({ g: c.geometry, m: c.matrix });
+    }
+    if (parts.length) { const s = new T.Mesh(inkGeo(parts), mat); s.userData.ink = true; n.add(s); }
+  }
+}
+// an ink shell for an InstancedMesh (shares its instance matrices)
+function inkInstanced(im, mat) {
+  const s = new T.InstancedMesh(inkGeo([{ g: im.geometry }]), mat, im.count);
+  s.instanceMatrix = im.instanceMatrix; s.userData.ink = true; s.frustumCulled = im.frustumCulled;
+  return s;
+}
+
 // ───────────────────────── world: sky, ground, armies, fortress ─────────────────────────
 const World = (() => {
   const scene = new T.Scene();
@@ -988,7 +1215,6 @@ const World = (() => {
   const hemi = new T.HemisphereLight(0xffffff, 0x333333, 0.9);
   const sun = new T.DirectionalLight(0xffffff, 1);
   const fill = new T.DirectionalLight(0x8899bb, 0.3);
-  scene.add(hemi, sun, sun.target, fill, fill.target);
   const sunDir = V3(0.2, 0.25, -1).normalize();
 
   // ── sky dome
@@ -1015,13 +1241,18 @@ const World = (() => {
         vec3 col = mix(uHor, uMid, smoothstep(0.0, 0.2, h));
         col = mix(col, uTop, smoothstep(0.12, 0.7, h));
         float sd = max(dot(d, normalize(uSunDir)), 0.0);
-        col += uSun * (pow(sd, 6.0) * 0.4 + pow(sd, 40.0) * 0.5);
-        col = mix(col, uSunCore, smoothstep(uSunSize, uSunSize + 0.0012, sd));
+        float hasSun = step(uSunSize, 0.99999);
+        col = mix(col, uSun, (0.15 * smoothstep(0.953, 0.956, sd) + 0.2 * smoothstep(0.984, 0.9856, sd)) * hasSun + pow(sd, 5.0) * 0.22);
+        col = mix(col, uSunCore, smoothstep(uSunSize, uSunSize + 0.0005, sd));
         vec2 uv = d.xz / (abs(d.y) + 0.22);
-        float c = fbm(uv * 1.3 + vec2(uTime * 0.008, 0.0));
-        float cl = smoothstep(0.42, 0.78, c + uCloud * 0.25 - 0.12) * uCloud * smoothstep(0.015, 0.16, h);
-        vec3 cc = mix(uCloudDark, uCloudLit, clamp(pow(sd, 2.5) * 0.9 + (1.0 - smoothstep(0.0, 0.5, h)) * 0.35, 0.0, 1.0));
-        col = mix(col, cc, cl);
+        float c = fbm(uv * 1.15 + vec2(uTime * 0.006, 0.0));
+        float thr = 0.66 - uCloud * 0.2;
+        float m1 = smoothstep(thr, thr + 0.01, c) * smoothstep(0.02, 0.09, h);
+        float m2 = smoothstep(thr + 0.05, thr + 0.06, c);
+        float toSun = clamp(pow(sd, 2.0) * 0.9 + (1.0 - smoothstep(0.0, 0.5, h)) * 0.3, 0.0, 1.0);
+        vec3 body = mix(uCloudDark, uCloudLit, toSun * 0.7);
+        vec3 cc = mix(mix(uCloudLit, vec3(1.0), 0.3), body, m2);
+        col = mix(col, cc, m1 * min(1.0, uCloud * 1.4));
         col = mix(col, uHor, smoothstep(0.03, -0.06, h));
         col += uFlash;
         gl_FragColor = vec4(col, 1.0);
@@ -1040,25 +1271,30 @@ const World = (() => {
   function makeGroundTex() {
     const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
     const g = c.getContext('2d'); const r = mulberry(7);
-    g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, S, S);
-    for (let i = 0; i < 300; i++) {
-      const x = r() * S, y = r() * S, s = 12 + r() * 64, v = 95 + ((r() * 100) | 0), a = 0.08 + r() * 0.12, rot = r() * PI, e = 0.4 + r() * 0.6;
-      g.fillStyle = `rgba(${v},${v},${v},${a})`;
-      wrapDraw(g, S, x, y, s, (px, py) => { g.beginPath(); g.ellipse(px, py, s, s * e, rot, 0, TAU); g.fill(); });
+    g.fillStyle = '#b6b6b6'; g.fillRect(0, 0, S, S);
+    const blob = (px, py, s, e, rot, n) => {
+      g.beginPath();
+      for (let k = 0; k <= n; k++) { const a = (k / n) * TAU, rr = s * (0.72 + 0.28 * Math.sin(a * 3 + rot * 5) + 0.12 * Math.sin(a * 5 + rot)); const x = Math.cos(a) * rr, y = Math.sin(a) * rr * e, cs = Math.cos(rot), sn = Math.sin(rot); if (k) g.lineTo(px + x * cs - y * sn, py + x * sn + y * cs); else g.moveTo(px + x * cs - y * sn, py + x * sn + y * cs); }
+      g.closePath(); g.fill();
+    };
+    for (let i = 0; i < 46; i++) {     // broad flat patches, hard-edged
+      const x = r() * S, y = r() * S, s = 26 + r() * 62, e = 0.35 + r() * 0.4, rot = r() * PI, lt = r() < 0.5;
+      g.fillStyle = lt ? '#c8c8c8' : '#a2a2a2';
+      wrapDraw(g, S, x, y, s, (px, py) => blob(px, py, s, e, rot, 18));
     }
-    for (let i = 0; i < 3200; i++) {
-      const x = r() * S, y = r() * S, s = 0.6 + r() * 1.8, v = r() < 0.5 ? 60 + r() * 40 : 170 + r() * 60;
-      g.fillStyle = `rgba(${v | 0},${v | 0},${v | 0},${0.25 + r() * 0.35})`;
-      g.fillRect(x, y, s, s);
+    for (let i = 0; i < 60; i++) {     // small darker clumps
+      const x = r() * S, y = r() * S, s = 4 + r() * 10, e = 0.5 + r() * 0.4, rot = r() * PI;
+      g.fillStyle = '#8e8e8e';
+      wrapDraw(g, S, x, y, s, (px, py) => blob(px, py, s, e, rot, 10));
     }
     g.lineCap = 'round';
-    for (let i = 0; i < 420; i++) {
-      const x = r() * S, y = r() * S, l = 3 + r() * 9, a = r() * TAU, v = r() < 0.6 ? 70 : 185;
-      g.strokeStyle = `rgba(${v},${v},${v},${0.18 + r() * 0.2})`; g.lineWidth = 0.8 + r() * 1.4;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    for (let i = 0; i < 84; i++) {    // ink strokes: tufts of dry grass, scuffs
+      const x = r() * S, y = r() * S, l = 5 + r() * 12, a = -PI / 2 + (r() - 0.5) * 1.3;
+      g.strokeStyle = 'rgba(84,84,84,' + (0.45 + r() * 0.3) + ')'; g.lineWidth = 1.2 + r() * 1.3;
+      for (let k = -1; k <= 1; k++) { const aa = a + k * (0.25 + r() * 0.2); g.beginPath(); g.moveTo(x + k * 2.5, y); g.quadraticCurveTo(x + k * 2.5 + Math.cos(aa) * l * 0.5, y + Math.sin(aa) * l * 0.5, x + k * 3 + Math.cos(aa + k * 0.3) * l, y + Math.sin(aa + k * 0.3) * l); g.stroke(); }
     }
     const t = new T.CanvasTexture(c);
-    t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(150, 150);
+    t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(150, 150); t.anisotropy = 4;
     return t;
   }
   const gTex = makeGroundTex();
@@ -1068,31 +1304,36 @@ const World = (() => {
     for (let i = 0; i < n; i++) { const v = 0.74 + rr() * 0.34; cols[i * 3] = v; cols[i * 3 + 1] = v * (0.95 + rr() * 0.07); cols[i * 3 + 2] = v * (0.9 + rr() * 0.08); }
     gGeo.setAttribute('color', new T.BufferAttribute(cols, 3));
   }
-  const gMat = new T.MeshLambertMaterial({ map: gTex, vertexColors: true });
+  const gMat = toonMat({ map: gTex, vcol: true, edge: -2, rim: 0 });
   const ground = new T.Mesh(gGeo, gMat); scene.add(ground);
 
   // ── mountains
   const ridges = [];
   function ridge(radius, hMin, hMax, seed) {
-    const seg = 120, pos = [], idx = [], r = mulberry(seed);
+    const seg = 120, pos = [], idx = [], r = mulberry(seed), ink = radius * 0.0026;
     const ph = [r() * TAU, r() * TAU, r() * TAU, r() * TAU, r() * TAU];
     for (let i = 0; i <= seg; i++) {
       const a = (i / seg) * TAU;
       let h = 0.45 + 0.24 * Math.sin(a * 3 + ph[0]) + 0.17 * Math.sin(a * 7 + ph[1]) + 0.13 * Math.sin(a * 13 + ph[2]) + 0.09 * Math.sin(a * 23 + ph[3]) + 0.06 * Math.sin(a * 41 + ph[4]);
       h = hMin + (hMax - hMin) * sat(h);
+      const mid = Math.max(1.5, h * (0.4 + 0.16 * Math.sin(a * 11 + ph[1]) + 0.08 * Math.sin(a * 29 + ph[2])));
       const x = Math.sin(a) * radius, z = Math.cos(a) * radius;
-      pos.push(x, -8, z, x, h, z);
+      pos.push(x, -8, z, x, mid, z, x, mid, z, x, h, z, x, h, z, x, h + ink, z);      // haze, haze | body, body | ink, ink
     }
-    for (let i = 0; i < seg; i++) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    for (let i = 0; i < seg; i++) for (let q = 0; q < 6; q += 2) { const k = i * 6 + q; idx.push(k, k + 1, k + 6, k + 1, k + 7, k + 6); }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    g.setAttribute('color', new T.BufferAttribute(new Float32Array((seg + 1) * 6), 3));
+    g.setAttribute('color', new T.BufferAttribute(new Float32Array((seg + 1) * 18), 3));
     const m = new T.Mesh(g, new T.MeshBasicMaterial({ vertexColors: true, fog: false, side: T.DoubleSide }));
     m.frustumCulled = false; scene.add(m); ridges.push(m);
   }
-  function tintRidge(m, top, bottom) {
+  function tintRidge(m, top, bottom, ink) {
     const c = m.geometry.attributes.color, n = c.count;
-    for (let i = 0; i < n; i += 2) { c.setXYZ(i, bottom.r, bottom.g, bottom.b); c.setXYZ(i + 1, top.r, top.g, top.b); }
+    for (let i = 0; i < n; i += 6) {
+      c.setXYZ(i, bottom.r, bottom.g, bottom.b); c.setXYZ(i + 1, bottom.r, bottom.g, bottom.b);
+      c.setXYZ(i + 2, top.r, top.g, top.b); c.setXYZ(i + 3, top.r, top.g, top.b);
+      c.setXYZ(i + 4, ink.r, ink.g, ink.b); c.setXYZ(i + 5, ink.r, ink.g, ink.b);
+    }
     c.needsUpdate = true;
   }
   ridge(560, 22, 120, 3); ridge(470, 10, 74, 5); ridge(390, 4, 40, 9);
@@ -1100,7 +1341,7 @@ const World = (() => {
   ridges.forEach((m) => { m.material.depthWrite = false; });
 
   // ── props (speed cues)
-  const propM = mLam(0x7a705e), rockM = mLam(0x6b6359);
+  const propM = toonMat({ color: 0x7a705e, rim: 0 }), rockM = toonMat({ color: 0x6b6359, rim: 0.15 });
   {
     const r = mulberry(21);
     const tuftG = flat(new T.ConeGeometry(0.13, 0.24, 4)); tuftG.translate(0, 0.11, 0);
@@ -1119,9 +1360,9 @@ const World = (() => {
       o.position.set(Math.sin(a) * d, 0.02, Math.cos(a) * d); o.rotation.set(r() * 3, r() * 3, r() * 3);
       const s = 0.3 + r() * 1.1; o.scale.set(s, s * 0.45, s); o.updateMatrix(); rocks.setMatrixAt(i, o.matrix);
     }
-    scene.add(rocks);
+    scene.add(rocks, inkInstanced(rocks, INK_W));
     const stickG = new T.BoxGeometry(0.03, 1.5, 0.03); stickG.translate(0, 0.6, 0);
-    const sticks = new T.InstancedMesh(stickG, mLam(0x2c221c), 110);
+    const sticks = new T.InstancedMesh(stickG, toonMat({ color: 0x2c221c, rim: 0 }), 110);
     for (let i = 0; i < 110; i++) {
       const a = r() * TAU, d = 38 + r() * 46;
       o.position.set(Math.sin(a) * d, 0, Math.cos(a) * d); o.rotation.set(rnd(-0.6, 0.6), r() * TAU, rnd(-0.6, 0.6));
@@ -1148,9 +1389,9 @@ const World = (() => {
   function makeFlag(key, x, z, face, hgt, big) {
     const grp = new T.Group(); grp.position.set(x, 0, z); grp.rotation.y = face;
     const w = big ? 3.4 : 1.5, h = big ? 6 : 2.6;
-    mesh(new T.CylinderGeometry(0.05, 0.07, hgt, 5), mLam(0x2a211b), 0, hgt / 2, 0, grp);
+    mesh(new T.CylinderGeometry(0.05, 0.07, hgt, 5), toonMat({ color: 0x2a211b, rim: 0 }), 0, hgt / 2, 0, grp);
     const geo = new T.PlaneGeometry(w, h, 5, 4); geo.translate(w / 2, 0, 0);
-    const m = new T.MeshLambertMaterial({ map: drawFlagTex(key, '#444', '#ddd', '軍'), side: T.DoubleSide });
+    const m = toonMat({ map: drawFlagTex(key, '#444', '#ddd', '軍'), side: T.DoubleSide, rim: 0, edge: -0.3 });
     const f = mesh(geo, m, 0, hgt - h / 2 - 0.1, 0, grp);
     flags.push({ geo, base: geo.attributes.position.array.slice(), w, ph: rnd(TAU), m });
     scene.add(grp);
@@ -1163,7 +1404,7 @@ const World = (() => {
     const headG = flat(new T.IcosahedronGeometry(0.17, 0)); headG.translate(0, 1.74, 0);
     const spearG = new T.BoxGeometry(0.035, 2.9, 0.035); spearG.translate(0.3, 1.45, 0.08);
     const shieldG = flat(new T.CylinderGeometry(0.32, 0.32, 0.06, 7)); shieldG.rotateX(PI / 2); shieldG.translate(-0.1, 1.02, 0.22);
-    const bodyM = mLam(0xffffff), headM = mLam(0x2b2622), spearM = mLam(0x1e1814), shieldM = mLam(0xffffff);
+    const bodyM = toonMat({ rim: 0 }), headM = toonMat({ color: 0x2b2622, rim: 0 }), spearM = toonMat({ color: 0x1e1814, rim: 0 }), shieldM = toonMat({ rim: 0 });
     const bodies = new T.InstancedMesh(bodyG, bodyM, n), heads = new T.InstancedMesh(headG, headM, n);
     const spears = new T.InstancedMesh(spearG, spearM, n), shields = new T.InstancedMesh(shieldG, shieldM, cols * 2);
     const o = new T.Object3D(); let si = 0;
@@ -1197,7 +1438,7 @@ const World = (() => {
   }
 
   // ── fortress (foe side) & camp (ally side)
-  const stoneM = mLam(0x4d443c), woodM = mLam(0x5c2c22), roofM = mLam(0x26221f), darkM = mLam(0x0c0a09);
+  const stoneM = toonMat({ color: 0x4d443c, rim: 0 }), woodM = toonMat({ color: 0x5c2c22, rim: 0 }), roofM = toonMat({ color: 0x26221f, rim: 0 }), darkM = toonMat({ color: 0x0c0a09, rim: 0 });
   function roofG(w, h, d, inset, ridgeK) {
     const g = new T.BoxGeometry(w, h, d), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) { p.setX(i, p.getX(i) * inset); p.setZ(i, p.getZ(i) * ridgeK); }
@@ -1220,19 +1461,20 @@ const World = (() => {
       mesh(boxG(18, 6, 10), woodM, x, 29, 2, f);
       mesh(roofG(28, 6, 17, 0.5, 0.2), roofM, x, 35, 2, f);
     });
+    addInk(f, INK_FAR);
   }
   {
     const cmp = new T.Group(); cmp.position.z = 150; scene.add(cmp);
-    const tentM = mLam(0xb9ab8c), r = mulberry(77);
+    const tentM = toonMat({ color: 0xb9ab8c, rim: 0 }), r = mulberry(77);
     const tentG = flat(new T.ConeGeometry(1, 1, 6)); tentG.translate(0, 0.5, 0);
     const tents = new T.InstancedMesh(tentG, tentM, 26), o = new T.Object3D();
     for (let i = 0; i < 26; i++) {
       o.position.set((r() - 0.5) * 300, 0, 8 + r() * 70); const s = 5 + r() * 5; o.scale.set(s, s * (0.8 + r() * 0.5), s);
       o.rotation.y = r() * TAU; o.updateMatrix(); tents.setMatrixAt(i, o.matrix);
     }
-    cmp.add(tents);
+    cmp.add(tents, inkInstanced(tents, INK_FAR));
     const palG = flat(new T.ConeGeometry(0.28, 4.4, 5)); palG.translate(0, 2.2, 0);
-    const pal = new T.InstancedMesh(palG, mLam(0x3a2c22), 150);
+    const pal = new T.InstancedMesh(palG, toonMat({ color: 0x3a2c22, rim: 0 }), 150);
     for (let i = 0; i < 150; i++) { o.position.set((i - 74.5) * 2.2, 0, -8 + Math.sin(i * 0.7) * 0.4); o.scale.set(1, 0.85 + r() * 0.3, 1); o.rotation.set(0, r() * 3, 0); o.updateMatrix(); pal.setMatrixAt(i, o.matrix); }
     cmp.add(pal);
   }
@@ -1281,7 +1523,10 @@ const World = (() => {
     hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = p.hemiI;
     sun.color.set(p.sunLight); sun.intensity = p.sunI;
     fill.color.set(p.fill); fill.intensity = p.fillI;
-    ridges.forEach((m, i) => tintRidge(m, mixHex(p.hor, p.ridge, [0.34, 0.55, 0.78][i]), mixHex(p.hor, p.fog, 0.6)));
+    ridges.forEach((m, i) => tintRidge(m, mixHex(p.hor, p.ridge, [0.34, 0.55, 0.78][i]), mixHex(p.hor, p.ridge, [0.14, 0.26, 0.4][i]), mixHex(p.ridge, p.ink, [0.35, 0.55, 0.8][i])));
+    const E = TOON.W, EV = TOON.V, ex = p.tExp || 1;
+    E.sun.value.copy(sunDir); E.lit.value.set(p.tLit).multiplyScalar(ex); E.shade.value.set(p.tShade).multiplyScalar(ex); E.rim.value.set(p.tRim); E.ink.value.set(p.ink);
+    EV.lit.value.copy(E.lit.value); EV.shade.value.copy(E.shade.value); EV.rim.value.copy(E.rim.value); EV.ink.value.copy(E.ink.value);
     stoneM.color.copy(mixHex(0x4d443c, p.fog, 0.15));
     const d = mixHex(p.ground, p.fog, 0.5); dust.r = d.r; dust.g = d.g; dust.b = d.b;
     moteSpec = p.mote;
@@ -1307,7 +1552,7 @@ const World = (() => {
   return { scene, sunDir, hemi, sun, fill, applyPalette, setArmy, update, seedMotes, dust, skyFlash: (v) => { flashV = Math.max(flashV, v); } };
 })();
 
-// ───────────────────────── geometry lofts & painted textures (v0.2 models) ─────────────────────────
+// ───────────────────────── geometry lofts & painted textures ─────────────────────────
 // loft a smooth skin over elliptical rings. ring: { c:[x,y,z], ax:[..], ay:[..], rx, ry, e (superellipse), col (vertex tint), v }
 function loftG(rings, seg, o) {
   o = o || {}; seg = seg || 12;
@@ -1469,178 +1714,153 @@ function orientXY(o, xdir, yhint) {
   _m4.makeBasis(_X, _Y, _Z); o.quaternion.setFromRotationMatrix(_m4);
 }
 
-// ── painted textures (canvas). greyscale ones are tinted by material.color
+// ── painted textures (canvas), cel style: flat fills and ink lines. greyscale ones are tinted by the material colour
 const TEX = (() => {
   const mk = (w, h, fn, rep) => {
     const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h);
     const t = new T.CanvasTexture(c); if (rep) { t.wrapS = t.wrapT = T.RepeatWrapping; } t.anisotropy = 4; return t;
   };
   const r = mulberry(99);
-  // lamellar (찰갑): rows of small laced plates
-  function lam(g, W, H, bump) {
+  // lamellar (찰갑): rows of small plates, each a flat fill with an ink edge, a shadow under the row above and one highlight tick
+  const lamellar = mk(256, 256, (g, W, H) => {
     const pw = W / 8, ph = H / 6;
-    g.fillStyle = bump ? '#202020' : '#5a5650'; g.fillRect(0, 0, W, H);
-    for (let row = -1; row < 7; row++) for (let c = -1; c < 9; c++) {
-      const x = c * pw + (row % 2 ? pw / 2 : 0), y = row * ph, v = bump ? 205 : 168 + ((r() * 40) | 0);
-      const gr = g.createLinearGradient(x, y, x, y + ph * 1.18);
-      if (bump) { gr.addColorStop(0, '#6a6a6a'); gr.addColorStop(0.35, '#e8e8e8'); gr.addColorStop(1, '#ffffff'); }
-      else { gr.addColorStop(0, `rgb(${v - 70},${v - 72},${v - 76})`); gr.addColorStop(0.3, `rgb(${v},${v},${v - 4})`); gr.addColorStop(0.85, `rgb(${v + 14},${v + 13},${v + 8})`); gr.addColorStop(1, `rgb(${v - 30},${v - 32},${v - 36})`); }
-      g.fillStyle = gr;
-      const x0 = x + 1.2, x1 = x + pw - 1.2, y0 = y, y1 = y + ph * 1.16, rr = pw * 0.3;
-      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y0); g.lineTo(x1, y1 - rr); g.quadraticCurveTo(x1, y1, x1 - rr, y1); g.lineTo(x0 + rr, y1); g.quadraticCurveTo(x0, y1, x0, y1 - rr); g.closePath(); g.fill();
-      g.fillStyle = bump ? '#303030' : 'rgba(30,22,16,0.8)';
-      g.fillRect(x + pw * 0.3, y + ph * 0.34, 2.2, 2.2); g.fillRect(x + pw * 0.62, y + ph * 0.34, 2.2, 2.2);
-      if (!bump) { g.fillStyle = 'rgba(150,40,26,0.55)'; g.fillRect(x + pw * 0.28, y + ph * 0.52, pw * 0.44, 1.6); }
+    g.fillStyle = '#565656'; g.fillRect(0, 0, W, H);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    for (let row = 6; row >= -1; row--) for (let c = -1; c < 9; c++) {
+      const x = c * pw + (row % 2 ? pw / 2 : 0), y = row * ph, x0 = x + 0.8, x1 = x + pw - 0.8, y1 = y + ph * 1.2, rr = pw * 0.34;
+      const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.lineTo(x1, y1 - rr); g.quadraticCurveTo(x1, y1, x1 - rr, y1); g.lineTo(x0 + rr, y1); g.quadraticCurveTo(x0, y1, x0, y1 - rr); g.closePath(); };
+      path(); g.fillStyle = (c + row) % 2 ? '#dcdcdc' : '#d0d0d0'; g.fill();
+      g.save(); path(); g.clip(); g.fillStyle = '#a4a4a4'; g.fillRect(x, y, pw, ph * 0.2); g.restore();
+      path(); g.strokeStyle = '#565656'; g.lineWidth = 2.2; g.stroke();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x0 + pw * 0.24, y + ph * 0.36); g.lineTo(x0 + pw * 0.24, y + ph * 0.74); g.stroke();
+      g.fillStyle = '#565656'; g.fillRect(x + pw * 0.56, y + ph * 0.42, 2.4, 2.4); g.fillRect(x + pw * 0.56, y + ph * 0.66, 2.4, 2.4);
     }
-  }
-  const lamellar = mk(256, 256, (g, W, H) => lam(g, W, H, false), true);
-  const lamellarBump = mk(256, 256, (g, W, H) => lam(g, W, H, true), true);
-  const cloth = mk(128, 128, (g, W, H) => {
-    g.fillStyle = '#e4e4e4'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 2600; i++) { const v = 190 + ((r() * 60) | 0); g.fillStyle = `rgba(${v},${v},${v},0.5)`; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1); }
-    for (let x = 0; x < W; x += 2) { g.fillStyle = `rgba(0,0,0,${0.03 + r() * 0.05})`; g.fillRect(x, 0, 1, H); }
   }, true);
-  const leather = mk(128, 128, (g, W, H) => {
-    g.fillStyle = '#d0d0d0'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 500; i++) { const v = 150 + ((r() * 90) | 0); g.fillStyle = `rgba(${v},${v},${v},0.35)`; g.beginPath(); g.arc(r() * W, r() * H, 1 + r() * 5, 0, TAU); g.fill(); }
-  }, true);
-  const coat = mk(256, 256, (g, W, H) => {
-    g.fillStyle = '#e9e9e9'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 90; i++) { const v = 205 + ((r() * 45) | 0); g.fillStyle = `rgba(${v},${v},${v},0.3)`; g.beginPath(); g.ellipse(r() * W, r() * H, 8 + r() * 26, 6 + r() * 16, r() * 3, 0, TAU); g.fill(); }
-    g.lineCap = 'round';
-    for (let i = 0; i < 5200; i++) { const x = r() * W, y = r() * H, v = r() < 0.5 ? 150 : 255; g.strokeStyle = `rgba(${v},${v},${v},${0.1 + r() * 0.12})`; g.lineWidth = 0.7; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r() - 0.5) * 2, y + 3 + r() * 4); g.stroke(); }
-  }, true);
+  // hair for beards and hair caps: a flat tone with a few bold strands
   const hairT = mk(64, 128, (g, W, H) => {
-    g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 260; i++) { const x = r() * W, v = 90 + ((r() * 165) | 0); g.strokeStyle = `rgba(${v},${v},${v},0.55)`; g.lineWidth = 0.6 + r(); g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (r() - 0.5) * 6, H); g.stroke(); }
+    g.fillStyle = '#d2d2d2'; g.fillRect(0, 0, W, H); g.lineCap = 'round';
+    for (let i = 0; i < 9; i++) { const x = (i + 0.5) / 9 * W + (r() - 0.5) * 5; g.strokeStyle = i % 3 === 1 ? '#ffffff' : '#767676'; g.lineWidth = i % 3 === 1 ? 1.6 : 2 + r() * 1.6; g.beginPath(); g.moveTo(x, -4); g.quadraticCurveTo(x + (r() - 0.5) * 10, H * 0.5, x + (r() - 0.5) * 8, H + 4); g.stroke(); }
   }, true);
+  // cut-out hair (manes, tails, plumes, tassels): the root is at the bottom of the canvas (v = 0), clumps taper to points at v = 1
   const hairA = mk(64, 128, (g, W, H) => {
     g.clearRect(0, 0, W, H); g.lineCap = 'round';
-    g.fillStyle = '#c4c4c4'; g.fillRect(0, H * 0.6, W, H * 0.4);
-    for (let i = 0; i < 46; i++) { const x = r() * W, v = 150 + ((r() * 90) | 0); g.strokeStyle = `rgb(${v},${v},${v})`; g.lineWidth = 1 + r() * 1.5; g.beginPath(); g.moveTo(x, H); g.lineTo(x + (r() - 0.5) * 5, H * 0.6); g.stroke(); }
-    for (let i = 0; i < 130; i++) {
-      const x = r() * W, len = H * (0.5 + r() * 0.5), v = 158 + ((r() * 97) | 0);
-      g.strokeStyle = `rgb(${v},${v},${v})`; g.lineWidth = 2.4 + r() * 3.2;
-      g.beginPath(); g.moveTo(x, H); g.quadraticCurveTo(x + (r() - 0.5) * 8, H - len * 0.5, x + (r() - 0.5) * 14, H - len); g.stroke();
+    g.fillStyle = '#d0d0d0'; g.fillRect(0, H * 0.6, W, H * 0.4);
+    const n = 5;
+    for (let pass = 0; pass < 2; pass++) for (let i = -1; i <= n; i++) {
+      const x0 = (i / n) * W - 3 + pass * (W / n / 2), x1 = x0 + W / n + 6, xm = (x0 + x1) / 2 + (r() - 0.5) * 9, top = H * (0.03 + r() * (pass ? 0.3 : 0.42));
+      g.fillStyle = pass ? '#dadada' : '#c2c2c2';
+      g.beginPath(); g.moveTo(x0, H * 0.68); g.quadraticCurveTo(x0 + 1, H * 0.4, xm, top); g.quadraticCurveTo(x1 - 1, H * 0.4, x1, H * 0.68); g.closePath(); g.fill();
+      g.strokeStyle = pass ? '#ffffff' : '#9c9c9c'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0 + 2, H); g.quadraticCurveTo(x0 + 2.5, H * 0.45, xm, top + 3); g.stroke();
     }
   }, true);
   hairA.wrapT = T.ClampToEdgeWrapping;
-  // a small sky for metal to mirror (equirectangular)
-  const env = mk(256, 128, (g, W, H) => {
-    const gr = g.createLinearGradient(0, 0, 0, H);
-    gr.addColorStop(0, '#9fb4c8'); gr.addColorStop(0.38, '#e8e4d8'); gr.addColorStop(0.5, '#fff6e0'); gr.addColorStop(0.56, '#6a5a48'); gr.addColorStop(1, '#1c1612');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    const sg = g.createRadialGradient(W * 0.3, H * 0.3, 2, W * 0.3, H * 0.3, 46); sg.addColorStop(0, 'rgba(255,255,255,1)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = sg; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 7; i++) { g.fillStyle = `rgba(40,32,26,${0.25 + r() * 0.3})`; g.fillRect(r() * W, H * 0.47, 6 + r() * 26, H * 0.1); }
-  });
-  env.mapping = T.EquirectangularReflectionMapping;
+  // ground shadow: a flat, hard-edged ellipse
   const shadow = mk(128, 128, (g, W, H) => {
     const gr = g.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W / 2);
-    gr.addColorStop(0, 'rgba(0,0,0,0.82)'); gr.addColorStop(0.45, 'rgba(0,0,0,0.6)'); gr.addColorStop(0.8, 'rgba(0,0,0,0.16)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, 'rgba(0,0,0,0.5)'); gr.addColorStop(0.8, 'rgba(0,0,0,0.5)'); gr.addColorStop(0.86, 'rgba(0,0,0,0.0)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
   });
   const feather = mk(32, 256, (g, W, H) => {
-    const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, '#b89a6a'); gr.addColorStop(0.5, '#f2e6c8'); gr.addColorStop(1, '#b89a6a');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    for (let y = 6; y < H; y += 17) { g.fillStyle = 'rgba(40,24,14,0.85)'; g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(W / 2, y + 7, W, y); g.lineTo(W, y + 5); g.quadraticCurveTo(W / 2, y + 12, 0, y + 5); g.fill(); }
-    g.fillStyle = 'rgba(60,40,24,0.9)'; g.fillRect(W / 2 - 1, 0, 2, H);
+    g.fillStyle = '#f4e8c8'; g.fillRect(0, 0, W, H);
+    for (let y = 6; y < H; y += 17) { g.fillStyle = '#3a2416'; g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(W / 2, y + 7, W, y); g.lineTo(W, y + 5.5); g.quadraticCurveTo(W / 2, y + 12.5, 0, y + 5.5); g.fill(); }
+    g.fillStyle = '#3a2416'; g.fillRect(W / 2 - 1.2, 0, 2.4, H); g.fillRect(0, 0, 2.2, H); g.fillRect(W - 2.2, 0, 2.2, H);
   });
   const css = (c) => '#' + new T.Color(c).getHexString();
   const cache = {};
   const memo = (key, make) => cache[key] || (cache[key] = make());
-  // face: SphereGeometry maps the front of the head to u = 0.25
+  // face, drawn as line art over flat skin. SphereGeometry maps the front of the head to u = 0.25 (x = 128 here); canvas left = the general's right
   function face(look) {
-    return memo('f' + [look.skin, look.hair, look.beard, look.patch, look.scar, look.helm === 'crown'].join(), () => mk(512, 256, (g, W, H) => {
-      const skin = new T.Color(look.skin || 0xd7a57c), hair = css(look.hair || 0x15110f), cx = 128;
-      const sk = (m) => '#' + skin.clone().multiplyScalar(m).getHexString();
+    return memo('f' + [look.skin, look.hair, look.beard, look.patch, look.scar, look.helm === 'crown'].join(), () => mk(1024, 512, (g) => {
+      const W = 512, H = 256; g.scale(2, 2);
+      const skin = new T.Color(look.skin || 0xdcab82), hair = css(look.hair || 0x1c1614), cx = 128, ink = '#22120c';
+      const sk = (m, red) => '#' + skin.clone().multiplyScalar(m).lerp(new T.Color(0xb04a34), red || 0).getHexString();
+      g.lineCap = 'round'; g.lineJoin = 'round';
       g.fillStyle = sk(1); g.fillRect(0, 0, W, H);
-      // hair round the back and sides
-      g.fillStyle = hair; g.fillRect(232, 0, 280, H); g.fillRect(0, 0, 24, H);
-      let gr = g.createLinearGradient(196, 0, 236, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, hair); g.fillStyle = gr; g.fillRect(196, 0, 40, H);
-      gr = g.createLinearGradient(60, 0, 20, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, hair); g.fillStyle = gr; g.fillRect(20, 0, 40, H);
-      // modelling: cheek hollows, brow shadow, forehead light
-      gr = g.createRadialGradient(cx, 118, 20, cx, 118, 82); gr.addColorStop(0, 'rgba(255,236,210,0.28)'); gr.addColorStop(0.6, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(60,24,10,0.35)');
-      g.fillStyle = gr; g.fillRect(40, 30, 176, 190);
-      g.fillStyle = 'rgba(70,30,14,0.3)'; g.beginPath(); g.ellipse(cx, 102, 46, 9, 0, 0, TAU); g.fill();
+      // flat shadow shapes: under the brow, down one side of the nose, under the lip, along the jaw
+      g.fillStyle = sk(0.8, 0.12);
+      [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 6, 101); g.quadraticCurveTo(cx + k * 26, 95, cx + k * 46, 94); g.quadraticCurveTo(cx + k * 44, 104, cx + k * 30, 106); g.quadraticCurveTo(cx + k * 16, 107, cx + k * 6, 110); g.closePath(); g.fill(); });
+      g.beginPath(); g.moveTo(cx + 2, 106); g.lineTo(cx + 10, 140); g.lineTo(cx + 15, 147); g.lineTo(cx + 4, 149); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(cx - 13, 179); g.quadraticCurveTo(cx, 186, cx + 13, 179); g.quadraticCurveTo(cx, 181, cx - 13, 179); g.fill();
+      g.beginPath(); g.moveTo(cx - 62, 150); g.quadraticCurveTo(cx - 50, 196, cx - 20, 212); g.lineTo(cx + 20, 212); g.quadraticCurveTo(cx + 50, 196, cx + 62, 150); g.lineTo(cx + 70, 256); g.lineTo(cx - 70, 256); g.closePath(); g.fill();
+      // hair on the sides and back
+      g.fillStyle = hair; g.beginPath(); g.moveTo(232, 0); g.quadraticCurveTo(222, 80, 226, 128); g.quadraticCurveTo(232, 150, 222, 172); g.lineTo(236, 256); g.lineTo(W, 256); g.lineTo(W, 0); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(24, 0); g.quadraticCurveTo(34, 80, 30, 128); g.quadraticCurveTo(24, 150, 34, 172); g.lineTo(20, 256); g.lineTo(0, 256); g.lineTo(0, 0); g.closePath(); g.fill();
       [-1, 1].forEach((k) => {
-        const ex = cx + k * 27, ey = 111;
-        g.save(); g.translate(ex, ey); g.rotate(k * -0.16);
-        g.fillStyle = 'rgba(40,16,8,0.45)'; g.beginPath(); g.ellipse(0, 0, 15, 8, 0, 0, TAU); g.fill();                 // socket
-        g.fillStyle = '#efe6d8'; g.beginPath(); g.moveTo(-12, 1); g.quadraticCurveTo(0, -7, 12, -1); g.quadraticCurveTo(0, 6, -12, 1); g.fill(); // white
-        g.fillStyle = '#2a160c'; g.beginPath(); g.arc(k * -1, -0.5, 4.6, 0, TAU); g.fill();
-        g.fillStyle = '#000'; g.beginPath(); g.arc(k * -1, -0.5, 2.2, 0, TAU); g.fill();
-        g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(k * -1 + 1, -3, 1.6, 1.6);
-        g.strokeStyle = '#140a06'; g.lineWidth = 2.6; g.lineCap = 'round'; g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.stroke(); // upper lid
-        g.lineWidth = 1; g.strokeStyle = 'rgba(60,24,10,0.7)'; g.beginPath(); g.moveTo(-11, 2.5); g.quadraticCurveTo(0, 7, 11, 0.5); g.stroke();
+        const ex = cx + k * 27, ey = 112;
+        g.save(); g.translate(ex, ey); g.rotate(k * -0.17);
+        g.fillStyle = '#f6efe2'; g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.fill();
+        g.save(); g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.clip();
+        g.fillStyle = '#5a2c14'; g.beginPath(); g.arc(-k * 1.2, -0.8, 5.6, 0, TAU); g.fill();
+        g.fillStyle = '#120806'; g.beginPath(); g.arc(-k * 1.2, -0.8, 2.9, 0, TAU); g.fill();
+        g.fillStyle = sk(0.7, 0.1); g.fillRect(-14, -9, 28, 4.6);         // the lid's shadow on the eye
         g.restore();
-        // brow: inner end low, outer end high
-        g.strokeStyle = hair; g.lineCap = 'round'; g.lineWidth = 6.5;
-        g.beginPath(); g.moveTo(cx + k * 9, 100); g.quadraticCurveTo(cx + k * 24, 92, cx + k * 43, 89); g.stroke();
-        g.lineWidth = 3; g.beginPath(); g.moveTo(cx + k * 40, 89); g.lineTo(cx + k * 48, 91); g.stroke();
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(-k * 1.2 + 2.2, -2.6, 1.3, 0, TAU); g.fill();
+        g.strokeStyle = ink; g.lineWidth = 3.2; g.beginPath(); g.moveTo(-14, 2); g.quadraticCurveTo(0, -9.5, 14, -2); g.lineTo(16.5, -4.5); g.stroke();   // upper lid with a flick
+        g.lineWidth = 1.3; g.beginPath(); g.moveTo(2, 5.2); g.quadraticCurveTo(8, 4.6, 12.5, 0.5); g.stroke();
+        g.restore();
+        // brow: thick at the nose, sweeping up and out to a point
+        g.fillStyle = hair; g.beginPath(); g.moveTo(cx + k * 6, 103); g.quadraticCurveTo(cx + k * 22, 90, cx + k * 49, 86); g.quadraticCurveTo(cx + k * 30, 97, cx + k * 9, 108.5); g.closePath(); g.fill();
+        // cheekbone stroke
+        g.strokeStyle = sk(0.62, 0.2); g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + k * 42, 132); g.quadraticCurveTo(cx + k * 36, 140, cx + k * 27, 143); g.stroke();
       });
-      // frown lines, nose, mouth
-      g.strokeStyle = 'rgba(70,30,14,0.55)'; g.lineWidth = 1.4;
-      g.beginPath(); g.moveTo(cx - 4, 96); g.lineTo(cx - 3, 104); g.moveTo(cx + 4, 96); g.lineTo(cx + 3, 104); g.stroke();
-      g.strokeStyle = 'rgba(70,30,14,0.5)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(cx - 6, 112); g.quadraticCurveTo(cx - 10, 134, cx - 12, 142); g.stroke();
-      g.beginPath(); g.moveTo(cx + 6, 112); g.quadraticCurveTo(cx + 10, 134, cx + 12, 142); g.stroke();
-      g.fillStyle = 'rgba(40,14,8,0.75)'; g.beginPath(); g.ellipse(cx - 6, 145, 3.6, 2.2, 0.3, 0, TAU); g.ellipse(cx + 6, 145, 3.6, 2.2, -0.3, 0, TAU); g.fill();
-      g.strokeStyle = 'rgba(70,30,14,0.45)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx - 15, 146); g.quadraticCurveTo(cx - 21, 158, cx - 20, 168); g.moveTo(cx + 15, 146); g.quadraticCurveTo(cx + 21, 158, cx + 20, 168); g.stroke();
-      g.strokeStyle = '#3a130c'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 16, 169); g.quadraticCurveTo(cx, 164, cx + 16, 169); g.stroke();
-      g.strokeStyle = 'rgba(120,50,36,0.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 10, 174); g.quadraticCurveTo(cx, 178, cx + 10, 174); g.stroke();
-      // facial hair
+      // frown lines, nostrils, mouth
+      g.strokeStyle = ink; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(cx - 3.5, 97); g.lineTo(cx - 2.5, 105); g.moveTo(cx + 3.5, 97); g.lineTo(cx + 2.5, 105); g.stroke();
+      g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx - 9, 146.5); g.quadraticCurveTo(cx - 6, 150, cx - 2.5, 147.5); g.moveTo(cx + 9, 146.5); g.quadraticCurveTo(cx + 6, 150, cx + 2.5, 147.5); g.stroke();
+      g.lineWidth = 2.8; g.beginPath(); g.moveTo(cx - 17, 171); g.quadraticCurveTo(cx - 8, 166.5, cx, 168); g.quadraticCurveTo(cx + 8, 166.5, cx + 17, 171); g.stroke();
+      g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 19, 168.5); g.lineTo(cx - 21, 173); g.moveTo(cx + 19, 168.5); g.lineTo(cx + 21, 173); g.stroke();
       if (look.beard) {
-        g.strokeStyle = hair; g.lineCap = 'round';
-        g.lineWidth = 6; g.beginPath(); g.moveTo(cx - 2, 158); g.quadraticCurveTo(cx - 14, 157, cx - 25, 168 + (look.beard === 2 ? 8 : 0)); g.moveTo(cx + 2, 158); g.quadraticCurveTo(cx + 14, 157, cx + 25, 168 + (look.beard === 2 ? 8 : 0)); g.stroke();
-        g.fillStyle = hair; g.beginPath(); g.moveTo(cx - 52, 150); g.quadraticCurveTo(cx - 44, 196, cx - 16, 210); g.lineTo(cx + 16, 210); g.quadraticCurveTo(cx + 44, 196, cx + 52, 150);
-        g.quadraticCurveTo(cx + 34, 178, cx + 14, 182); g.quadraticCurveTo(cx, 176, cx - 14, 182); g.quadraticCurveTo(cx - 34, 178, cx - 52, 150); g.fill();
-        g.fillRect(cx - 5, 178, 10, 14);
-        g.fillStyle = hair; g.fillRect(cx - 30, 205, 60, 51);
-      } else {
-        g.fillStyle = 'rgba(40,24,16,0.14)'; g.beginPath(); g.ellipse(cx, 186, 40, 24, 0, 0, TAU); g.fill();
+        g.fillStyle = hair;
+        [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 1, 156); g.quadraticCurveTo(cx + k * 14, 153, cx + k * 29, 168 + (look.beard === 2 ? 9 : 2)); g.quadraticCurveTo(cx + k * 14, 162, cx + k * 1, 163); g.closePath(); g.fill(); });   // moustache
+        g.beginPath(); g.moveTo(cx - 54, 148); g.quadraticCurveTo(cx - 46, 196, cx - 16, 212); g.lineTo(cx + 16, 212); g.quadraticCurveTo(cx + 46, 196, cx + 54, 148);
+        g.quadraticCurveTo(cx + 36, 180, cx + 14, 184); g.quadraticCurveTo(cx, 177, cx - 14, 184); g.quadraticCurveTo(cx - 36, 180, cx - 54, 148); g.fill();
+        g.beginPath(); g.moveTo(cx - 5, 178); g.lineTo(cx + 5, 178); g.lineTo(cx + 3, 192); g.lineTo(cx - 3, 192); g.closePath(); g.fill();
+        g.fillRect(cx - 30, 206, 60, 50);
       }
       if (look.patch) {
-        g.fillStyle = '#0b0908'; g.beginPath(); g.ellipse(cx + 27, 111, 19, 13, -0.1, 0, TAU); g.fill();
-        g.strokeStyle = '#0b0908'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx - 70, 70); g.lineTo(cx + 27, 108); g.lineTo(cx + 96, 122); g.stroke();
-        g.strokeStyle = 'rgba(120,40,30,0.7)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + 12, 86); g.lineTo(cx + 40, 136); g.stroke();
+        g.fillStyle = '#0e0b0a'; g.beginPath(); g.ellipse(cx + 27, 111, 20, 14, -0.1, 0, TAU); g.fill();
+        g.strokeStyle = '#0e0b0a'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx - 70, 70); g.lineTo(cx + 27, 108); g.lineTo(cx + 100, 122); g.stroke();
+        g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2; g.beginPath(); g.moveTo(cx + 13, 84); g.lineTo(cx + 18, 94); g.moveTo(cx + 38, 128); g.lineTo(cx + 42, 138); g.stroke();
       }
-      if (look.scar) { g.strokeStyle = 'rgba(130,50,40,0.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 44, 96); g.lineTo(cx - 30, 150); g.stroke(); }
+      if (look.scar) { g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx - 44, 96); g.lineTo(cx - 30, 150); g.stroke(); }
       if (look.helm === 'crown') {   // bare-headed: hair over the crown with a widow's peak
         g.fillStyle = hair; g.beginPath(); g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, 70); g.lineTo(232, 70);
-        g.quadraticCurveTo(190, 50, cx + 8, 62); g.lineTo(cx, 70); g.lineTo(cx - 8, 62); g.quadraticCurveTo(66, 50, 24, 70); g.lineTo(0, 70); g.closePath(); g.fill();
+        g.quadraticCurveTo(190, 50, cx + 8, 62); g.lineTo(cx, 71); g.lineTo(cx - 8, 62); g.quadraticCurveTo(66, 50, 24, 70); g.lineTo(0, 70); g.closePath(); g.fill();
       }
     }));
   }
-  // cape: the cloak colour with fold shading and a gold key-pattern border
+  // cape: flat colour, an ink edge and a gold key-pattern border
   function cape(color, trim) {
     return memo('c' + color + ',' + trim, () => mk(256, 256, (g, W, H) => {
+      const t = css(trim || 0xd2a850);
       g.fillStyle = css(color); g.fillRect(0, 0, W, H);
-      for (let x = 0; x < W; x += 16) { const gr = g.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, 'rgba(0,0,0,0.22)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.07)'); gr.addColorStop(1, 'rgba(0,0,0,0.22)'); g.fillStyle = gr; g.fillRect(x, 0, 16, H); }
-      g.strokeStyle = css(trim || 0xd2a850); g.lineWidth = 4;
-      g.strokeRect(9, 9, W - 18, H - 18);
-      g.lineWidth = 2.5;
-      for (let x = 22; x < W - 30; x += 22) { g.beginPath(); g.moveTo(x, H - 20); g.lineTo(x, H - 36); g.lineTo(x + 14, H - 36); g.lineTo(x + 14, H - 26); g.lineTo(x + 6, H - 26); g.stroke(); }
-      g.strokeRect(9, H - 44, W - 18, 0.1);
+      g.strokeStyle = '#' + new T.Color(color).multiplyScalar(0.3).getHexString(); g.lineWidth = 6; g.strokeRect(0, 0, W, H);
+      g.strokeStyle = t; g.lineWidth = 4.5; g.strokeRect(10, 10, W - 20, H - 20);
+      g.lineWidth = 2.6; g.lineJoin = 'miter';
+      for (let x = 24; x < W - 30; x += 22) { g.beginPath(); g.moveTo(x, H - 22); g.lineTo(x, H - 38); g.lineTo(x + 14, H - 38); g.lineTo(x + 14, H - 28); g.lineTo(x + 6, H - 28); g.stroke(); }
+      g.beginPath(); g.moveTo(10, H - 46); g.lineTo(W - 10, H - 46); g.stroke();
     }));
   }
-  // saddle cloth / caparison: cloth colour with a trimmed, patterned edge
+  // saddle cloth / caparison: flat colour, an ink edge, a trimmed and patterned border
   function blanket(color, trim) {
     return memo('b' + color + ',' + trim, () => mk(128, 128, (g, W, H) => {
+      const t = css(trim || 0xd2a850);
       g.fillStyle = css(color); g.fillRect(0, 0, W, H);
-      for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.12})`; g.fillRect(r() * W, r() * H, 2, 1); }
-      g.strokeStyle = css(trim || 0xd2a850); g.lineWidth = 5; g.strokeRect(6, 6, W - 12, H - 12);
-      g.lineWidth = 2; g.strokeRect(14, 14, W - 28, H - 28);
-      g.fillStyle = css(trim || 0xd2a850);
-      for (let x = 26; x < W - 20; x += 19) for (let y = 26; y < H - 20; y += 19) { g.beginPath(); g.moveTo(x, y - 3.5); g.lineTo(x + 3.5, y); g.lineTo(x, y + 3.5); g.lineTo(x - 3.5, y); g.fill(); }
+      g.strokeStyle = '#' + new T.Color(color).multiplyScalar(0.3).getHexString(); g.lineWidth = 5; g.strokeRect(0, 0, W, H);
+      g.strokeStyle = t; g.lineWidth = 5; g.strokeRect(7, 7, W - 14, H - 14);
+      g.lineWidth = 2; g.strokeRect(15, 15, W - 30, H - 30);
+      g.fillStyle = t;
+      for (let x = 27; x < W - 20; x += 19) for (let y = 27; y < H - 20; y += 19) { g.beginPath(); g.moveTo(x, y - 3.8); g.lineTo(x + 3.8, y); g.lineTo(x, y + 3.8); g.lineTo(x - 3.8, y); g.fill(); }
     }));
   }
-  return { lamellar, lamellarBump, cloth, leather, coat, hair: hairT, hairA, env, shadow, feather, face, cape, blanket };
+  return { lamellar, hair: hairT, hairA, shadow, feather, face, cape, blanket };
 })();
 
 // ───────────────────────── models: weapons, horse, rider (v0.2 — lofted forms, painted textures) ─────────────────────────
-function steelMat(c) { return new T.MeshPhongMaterial({ color: c, specular: 0xffffff, shininess: 110, flatShading: true, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.4 }); }
-function goldMat() { return new T.MeshPhongMaterial({ color: 0xd2a850, specular: 0xfff0b0, shininess: 55, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.22 }); }
+// characters are lit mostly by a key light fixed to the camera, so faces and armour keep a readable light side
+const KEY = 0.6;
+function steelMat(c, env) { return toonMat({ color: c, flat: true, env, key: KEY, edge: -0.02, spec: 1, shin: 20, rim: 1, rimCut: 0.5 }); }
+function goldMat(env) { return toonMat({ color: 0xdcae4a, env, key: KEY, edge: 0.12, hi: 0.18, spec: 0.9, shin: 18, specCol: 0xfff7d2, rim: 0.9 }); }
 // a hanging tuft of hair (root at the origin, falls along -y); meant for the alpha-tested hair texture
 function tuftG(len, r) { return loftG(ringsY([[0, r * 0.3, r * 0.3, 0, 0, 1, 0], [-len * 0.16, r * 0.8, r * 0.8, 0, 0, 1, 0.16], [-len * 0.55, r, r, 0, 0, 1, 0.55], [-len, r * 0.85, r * 0.85, 0, 0, 1, 1]]), 9, { cap: false, ur: 2 }); }
 // a fist closed round a shaft that runs along local x through the origin. +y: from the wrist to the knuckles. right hand; left = mirrored in z
@@ -1663,22 +1883,22 @@ const FIST_R = fistG(false), FIST_L = fistG(true);
 const BLADE_TEX = {};
 function bladeTex(type, shapes) {
   if (BLADE_TEX[type]) return BLADE_TEX[type];
-  const W = 256, H = 512, X0 = -0.34, XW = 0.68, Y0 = -0.02, YH = 0.82, rr = mulberry(7);
+  const W = 256, H = 512, X0 = -0.34, XW = 0.68, Y0 = -0.02, YH = 0.82;
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  g.fillStyle = '#aeb6be'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#b8c0c8'; g.fillRect(0, 0, W, H);
   const px = (x) => ((x - X0) / XW) * W, py = (y) => H - ((y - Y0) / YH) * H;
   shapes.forEach((sp) => {
     const pts = sp.s.getPoints(14); let cx = 0, cy = 0; pts.forEach((p) => { cx += p.x; cy += p.y; }); cx /= pts.length; cy /= pts.length;
     const path = (k) => { g.beginPath(); pts.forEach((p, i) => { const x = px(cx + (p.x - cx) * k), y = py(cy + (p.y - cy) * k); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath(); };
     g.save(); path(1); g.clip();
-    const gr = g.createLinearGradient(0, py(0.8), 0, py(0)); gr.addColorStop(0, '#eef2f5'); gr.addColorStop(0.55, '#b4bdc6'); gr.addColorStop(1, '#8a949e');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 160; i++) { const x = rr() * W, y = rr() * H, l = 6 + rr() * 22; g.strokeStyle = `rgba(${rr() < 0.5 ? '255,255,255' : '50,60,72'},${0.05 + rr() * 0.1})`; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x, y); g.lineTo(x + l, y - l * 0.35); g.stroke(); }
+    g.fillStyle = '#c4ccd4'; g.fillRect(0, 0, W, H);
     if (sp.b !== 0) {
+      g.fillStyle = '#eef2f6';        // two diagonal glints across the flat
+      for (let q = 0; q < 2; q++) { const y0 = py(cy) + (q ? 34 : -46), wd = q ? 9 : 26; g.beginPath(); g.moveTo(0, y0 + 60); g.lineTo(W, y0 - 60); g.lineTo(W, y0 - 60 + wd); g.lineTo(0, y0 + 60 + wd); g.closePath(); g.fill(); }
       g.lineJoin = 'round';
-      path(1); g.strokeStyle = 'rgba(56,66,80,0.85)'; g.lineWidth = 15; g.stroke();
-      path(1); g.strokeStyle = 'rgba(250,252,255,0.95)'; g.lineWidth = 11.5; g.stroke();
-      path(0.46); g.strokeStyle = 'rgba(56,66,80,0.5)'; g.lineWidth = 1.6; g.stroke();
+      path(1); g.strokeStyle = '#3c4654'; g.lineWidth = 16; g.stroke();
+      path(1); g.strokeStyle = '#ffffff'; g.lineWidth = 11.5; g.stroke();
+      path(0.46); g.strokeStyle = 'rgba(60,70,84,0.7)'; g.lineWidth = 1.8; g.stroke();
     }
     g.restore();
   });
@@ -1688,9 +1908,10 @@ function bladeTex(type, shapes) {
 function makeWeapon(type, o) {
   o = o || {};
   const g = new T.Group();
-  const shaftM = new T.MeshPhongMaterial({ color: o.shaft || 0x40281a, specular: 0x6a5a48, shininess: 34 });
-  const steelM = steelMat(o.steel || 0xdfe5ea), goldM = goldMat();
-  const redM = new T.MeshLambertMaterial({ color: o.tassel || 0xc8321e, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide });
+  const env = o.env || 'W';
+  const shaftM = toonMat({ color: celC(o.shaft || 0x40281a, 0.75), env, key: KEY, spec: 0.35, shin: 14, specCol: 0xd8c8b0, rim: 0.5 });
+  const steelM = steelMat(o.steel || 0xe6ecf1, env), goldM = goldMat(env);
+  const redM = toonMat({ color: o.tassel || 0xd2351f, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.15, rim: 0.2 });
   const D = { glaive: { top: 1.1, butt: -0.72 }, spear: { top: 1.44, butt: -0.78 }, serpent: { top: 1.36, butt: -0.78 }, halberd: { top: 1.32, butt: -0.78 } }[type];
   const len = D.top - D.butt;
   mesh(new T.CylinderGeometry(0.0205, 0.0235, len, 10), shaftM, 0, (D.top + D.butt) / 2, 0, g);
@@ -1743,7 +1964,7 @@ function makeWeapon(type, o) {
     bg.translate(0, 0, b > 0 ? -0.003 : -0.008);
     S.add(flat(bg), M4(0, D.top, 0));
   });
-  steelM.map = bladeTex(type, shapes);
+  const bt = bladeTex(type, shapes); bt.updateMatrix(); steelM.defines.T_MAP = ''; steelM.uniforms.map = { value: bt }; steelM.uniforms.uUvT = { value: bt.matrix };
   S.mesh(steelM, g); G.mesh(goldM, g);
   mesh(tuftG(type === 'spear' ? 0.27 : 0.22, type === 'spear' ? 0.085 : 0.062), redM, 0, D.top - 0.07, 0, g);
   return { g, type, tipY: D.top + bladeLen, baseY: D.top - 0.05, steelM };
@@ -1792,18 +2013,19 @@ const REIN_G = segG(0.007, 0.007, 4);
 function makeHorse(pal, o) {
   o = o || {};
   const mats = [], reg = (m) => { mats.push(m); return m; };
-  const cc = hex(pal.coat), pale = cc.r * 0.3 + cc.g * 0.59 + cc.b * 0.11 > 0.5;
+  const cc = celC(pal.coat, 0.68), pale = cc.r * 0.3 + cc.g * 0.59 + cc.b * 0.11 > 0.62;
   const rel = (c) => { const t = hex(c); return [Math.min(4, t.r / Math.max(0.03, cc.r)), Math.min(4, t.g / Math.max(0.03, cc.g)), Math.min(4, t.b / Math.max(0.03, cc.b))]; };
   const mix3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)], ONE = [1, 1, 1];
-  const ptsC = pale ? rel(mixHex(pal.coat, 0x7a746a, 0.3)) : rel(mixHex(pal.coat, 0x0c0a09, 0.74));      // dark "points" on the lower legs
-  const hoofC = rel(pale ? 0x4a443c : 0x1a1512), muzC = rel(mixHex(pal.coat, pale ? 0x8a7f78 : 0x0c0a09, 0.55));
-  const coat = reg(new T.MeshPhongMaterial({ color: pal.coat, specular: 0x2c2824, shininess: 14, vertexColors: true, map: TEX.coat }));
-  const hairM = reg(new T.MeshLambertMaterial({ color: pal.mane, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide }));
-  const clothM = reg(new T.MeshLambertMaterial({ map: TEX.blanket(pal.cloth, pal.trim || 0xd2a850), side: T.DoubleSide }));
-  const leather = reg(new T.MeshLambertMaterial({ color: 0x7a4c2c, map: TEX.leather, side: T.DoubleSide }));
-  const gold = reg(goldMat());
-  const redM = reg(new T.MeshLambertMaterial({ color: pal.tassel || 0xc8321e, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide }));
-  const eyeM = reg(new T.MeshPhongMaterial({ color: 0x0c0907, specular: 0xffffff, shininess: 80 }));
+  const ptsC = pale ? rel(mixHex(cc, 0x8a8478, 0.3)) : rel(mixHex(cc, 0x16110f, 0.7));      // dark "points" on the lower legs
+  const hoofC = rel(pale ? 0x5a544c : 0x241c18), muzC = rel(mixHex(cc, pale ? 0x9a8f88 : 0x16110f, 0.5));
+  const env = o.env || 'W';
+  const coat = reg(toonMat({ color: cc, vcol: true, env, key: KEY, edge: 0.04, hi: 0.12, hiEdge: 0.78, rim: 0.7 }));
+  const hairM = reg(toonMat({ color: celC(pal.mane, 0.8), map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.1, rim: 0.3 }));
+  const clothM = reg(toonMat({ map: TEX.blanket(celC(pal.cloth, 0.72).getHex(), pal.trim || 0xd2a850), side: T.DoubleSide, env, key: KEY, rim: 0.25 }));
+  const leather = reg(toonMat({ color: 0x8a5630, side: T.DoubleSide, env, key: KEY, rim: 0.3 }));
+  const gold = reg(goldMat(env));
+  const redM = reg(toonMat({ color: pal.tassel || 0xd2351f, map: TEX.hairA, alphaTest: 0.5, side: T.DoubleSide, env, key: KEY, edge: -0.15, rim: 0.2 }));
+  const eyeM = reg(toonMat({ color: 0x100b08, env, key: KEY, spec: 1, shin: 40, rim: 0 }));
   const root = new T.Group();
   const rear = new T.Group(); rear.position.set(0, 0.55, -0.62); root.add(rear);
   const body = new T.Group(); body.position.set(0, -0.55, 0.62); rear.add(body);
@@ -1836,6 +2058,7 @@ function makeHorse(pal, o) {
   DK.mesh(eyeM, head);
   const earG = tintG(loftG(ringsY([[0, 0.032, 0.02], [0.05, 0.036, 0.018], [0.11, 0.024, 0.012], [0.165, 0.004, 0.003]]), 8), () => 0.86);
   const earL = mesh(earG, coat, 0.058, -0.045, -0.088, head), earR = mesh(earG, coat, -0.058, -0.045, -0.088, head);
+  earL.userData.dyn = earR.userData.dyn = true;
   earL.rotation.x = earR.rotation.x = rad(-100);
   mesh(surfG((u, v, out) => { const y = lerp(-0.09, 0.2, v), p = seP(rowAt(HD, y), (u - 0.5) * 1.5, HD_E, 0.013); out[0] = p[0]; out[1] = y; out[2] = p[1]; }, 3, 4), hairM, 0, 0, 0, head);   // forelock
   // bridle
@@ -1880,8 +2103,8 @@ function makeHorse(pal, o) {
     }, 12, 7));
   });
   if (pal.barding) {
-    const met = reg(new T.MeshPhongMaterial({ color: hex(pal.bardMetal || 0x55504a).multiplyScalar(1.3), specular: 0x9a9a9a, shininess: 40, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.012, side: T.DoubleSide }));
-    const plate = reg(new T.MeshPhongMaterial({ color: pal.bardMetal || 0x55504a, specular: 0xaaaaaa, shininess: 60, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.15, side: T.DoubleSide }));
+    const met = reg(toonMat({ color: celC(pal.bardMetal || 0x55504a, 0.6), map: TEX.lamellar, side: T.DoubleSide, env, key: KEY, spec: 0.3, shin: 16, rim: 0.7 }));
+    const plate = reg(toonMat({ color: celC(pal.bardMetal || 0x55504a, 0.66), side: T.DoubleSide, env, key: KEY, spec: 0.8, shin: 22, rim: 0.9 }));
     mesh(surfG((u, v, out) => { const y = lerp(-0.05, 0.5, v), p = seP(rowAt(HD, y), (u - 0.5) * 1.9 * lerp(1, 0.8, v), HD_E, 0.014); out[0] = p[0]; out[1] = y; out[2] = p[1]; }, 8, 6), plate, 0, 0, 0, head);   // chanfron
     const f = rowAt(HD, 0.06); BG.add(new T.SphereGeometry(0.03, 8, 6), M4(0, 0.06, f[3] - f[2] - 0.016, 0, 0, 0, 1, 1, 0.5));
     mesh(loftG(ringsY(NK.filter((r) => r[0] > -0.06 && r[0] < 0.8).map((r) => [r[0], r[1] + 0.018, r[2] + 0.018, r[3]])), 14, { cap: false, ur: 3, vr: 2.4 }), met, 0, 0, 0, neck);   // crinet
@@ -1908,7 +2131,7 @@ function makeHorse(pal, o) {
   const tail2 = new T.Group(); tail2.position.y = -0.48; tail.add(tail2);
   mesh(loftG(ringsY([[0.03, 0.097, 0.078, 0, 0, 1, 0.38], [-0.2, 0.105, 0.08, 0, 0, 1, 0.58], [-0.42, 0.095, 0.07, 0, 0, 1, 0.8], [-0.64, 0.075, 0.05, 0, 0, 1, 1]]), 10, { ur: 3, cap: false }), hairM, 0, 0, 0, tail2);
   let reins = null;
-  if (o.reins) { reins = []; for (let i = 0; i < 4; i++) reins.push(mesh(REIN_G, leather, 0, 0, 0, body)); }
+  if (o.reins) { reins = []; for (let i = 0; i < 4; i++) { const rn = mesh(REIN_G, leather, 0, 0, 0, body); rn.userData.noInk = true; reins.push(rn); } }
   if (o.shadow) {
     const sh = mesh(new T.PlaneGeometry(2.0, 3.8), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false, color: 0x000000 }), 0, 0.035, -0.05, root);
     sh.rotation.x = -PI / 2; sh.renderOrder = -1;
@@ -1999,19 +2222,19 @@ function makeArm(right, L1, L2, M) {
 // rider look: { armor, armor2, cloth, sash, skin, hair, cape, plume, helm:'plume'|'horn'|'crown', beard:0|1|2, patch, scale }
 function makeRider(look) {
   const mats = [], reg = (m) => { mats.push(m); return m; };
-  const armor = reg(new T.MeshPhongMaterial({ color: hex(look.armor).multiplyScalar(1.45), specular: 0x4c443a, shininess: 26, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.012, side: T.DoubleSide }));
-  const armor2 = reg(new T.MeshPhongMaterial({ color: look.armor2 || 0x2a2622, specular: 0x9a9a9a, shininess: 55, envMap: TEX.env, combine: T.MixOperation, reflectivity: 0.14 }));
-  const cloth = reg(new T.MeshLambertMaterial({ color: look.cloth, map: TEX.cloth }));
-  const sash = reg(new T.MeshLambertMaterial({ color: look.sash || 0xc8321e, map: TEX.cloth, side: T.DoubleSide }));
-  const skin = reg(new T.MeshLambertMaterial({ color: look.skin || 0xd7a57c }));
-  const faceM = reg(new T.MeshLambertMaterial({ map: TEX.face(look) }));
+  const armor = reg(toonMat({ color: celC(look.armor, 0.6), map: TEX.lamellar, side: T.DoubleSide, key: KEY, edge: 0.08, spec: 0.35, shin: 14, rim: 0.75 }));
+  const armor2 = reg(toonMat({ color: celC(look.armor2 || 0x2a2622, 0.72), key: KEY, edge: 0.1, spec: 0.85, shin: 22, specCol: 0xe8eef6, rim: 0.9 }));
+  const cloth = reg(toonMat({ color: celC(look.cloth, 0.68), key: KEY, rim: 0.4 }));
+  const sash = reg(toonMat({ color: celC(look.sash || 0xc8321e, 0.82), side: T.DoubleSide, key: KEY, rim: 0.4 }));
+  const skin = reg(toonMat({ color: look.skin || 0xdcab82, key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
+  const faceM = reg(toonMat({ map: TEX.face(look), key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }));
   const gold = reg(goldMat());
-  const boot = reg(new T.MeshLambertMaterial({ color: 0x2a1e18, map: TEX.leather }));
-  const hairM = reg(new T.MeshLambertMaterial({ color: look.hair || 0x15110f, map: TEX.hair, side: T.DoubleSide }));
-  const capeM = reg(new T.MeshLambertMaterial({ map: TEX.cape(look.cape, look.capeTrim || 0xd2a850), side: T.DoubleSide }));
-  const capeP = reg(new T.MeshLambertMaterial({ color: look.cape }));
+  const boot = reg(toonMat({ color: 0x3a2a22, key: KEY, spec: 0.3, shin: 14, specCol: 0xb8a898, rim: 0.4 }));
+  const hairM = reg(toonMat({ color: look.hair || 0x1c1614, map: TEX.hair, side: T.DoubleSide, key: KEY, rim: 0.3 }));
+  const capeM = reg(toonMat({ map: TEX.cape(celC(look.cape, 0.7).getHex(), look.capeTrim || 0xd2a850), side: T.DoubleSide, key: KEY, edge: 0.0, rim: 0.2 }));
+  const capeP = reg(toonMat({ color: celC(look.cape, 0.7), key: KEY, rim: 0.3 }));
   const crown = look.helm === 'crown';
-  const plumeM = reg(new T.MeshLambertMaterial({ color: crown ? 0xffffff : look.plume || 0xc8321e, map: crown ? TEX.feather : TEX.hairA, alphaTest: crown ? 0 : 0.5, side: T.DoubleSide }));
+  const plumeM = reg(toonMat({ color: crown ? 0xffffff : look.plume || 0xc8321e, map: crown ? TEX.feather : TEX.hairA, alphaTest: crown ? 0 : 0.5, side: T.DoubleSide, key: KEY, edge: -0.15, rim: 0.25 }));
   // seat: pelvis, legs, skirts (fixed to the saddle)
   const seat = new T.Group();
   const C = new Merge(), A = new Merge(), G = new Merge(), B = new Merge(), A2 = new Merge(), SS = new Merge();
@@ -2069,7 +2292,7 @@ function makeRider(look) {
     hG.add(latheG([[0.118, 0.066], [0.125, 0.071], [0.125, 0.094], [0.118, 0.099]], 18), M4(0, 0, 0.002, -0.12, 0, 0, 0.84, 1, 0.93));
     hG.add(latheG([[0.05, 0.0], [0.058, 0.012], [0.046, 0.04], [0.062, 0.062], [0.05, 0.07]], 12), M4(0, 0.135, -0.025));
     for (let i = 0; i < 3; i++) hG.add(new T.ConeGeometry(0.014, 0.06, 5), M4(Math.sin((i - 1) * 0.9) * 0.055, 0.225, -0.025 + Math.cos((i - 1) * 0.9) * 0.055));
-    mesh(new T.SphereGeometry(0.03, 8, 6), reg(new T.MeshLambertMaterial({ color: 0xc8321e })), 0, 0.245, -0.025, head);
+    mesh(new T.SphereGeometry(0.03, 8, 6), reg(toonMat({ color: 0xd2351f, key: KEY })), 0, 0.245, -0.025, head);
     [1, -1].forEach((k) => {
       let parent = head; const chain = [];
       for (let i = 0; i < 6; i++) {
@@ -2110,7 +2333,7 @@ function makeRider(look) {
   const armR = arm(-1, true), armL = arm(1, false);
   // cape
   const capeC = 7, capeR = 9, capeG = new T.PlaneGeometry(0.86, 1.2, capeC - 1, capeR - 1);
-  const cape = mesh(capeG, capeM, 0, 0, 0, waist); cape.frustumCulled = false;
+  const cape = mesh(capeG, capeM, 0, 0, 0, waist); cape.frustumCulled = false; cape.userData.noInk = true;
   return { seat, waist, head, armR, armL, cape, capeG, capeC, capeR, plumes, mats, seed: rnd(100), edge: V3(1, 0, 0), prevTip: V3(), restL: V3(0.14, 0.12, 0.3) };
 }
 function updateCape(R, t, wind) {
@@ -2211,18 +2434,23 @@ EP.blkD = EP.blkU;
 const PALS = {
   dusk: { top: 0x1b1f3a, mid: 0x7a3b3b, hor: 0xf0a35a, sun: 0xffb46b, sunCore: 0xfff3d6, sunDir: [0.35, 0.13, -1], sunSize: 0.9965, cloud: 0.75, cloudDark: 0x3a2030, cloudLit: 0xffa560,
     fog: 0xd6935f, fogNear: 35, fogFar: 480, ground: 0x9a7350, hemiSky: 0xffc9a0, hemiGround: 0x4a3528, hemiI: 0.85, sunLight: 0xffb070, sunI: 0.9, fill: 0x8fa4c8, fillI: 0.4,
+    tLit: 0xfff1de, tShade: 0x8d7cae, tRim: 0xffd49c, ink: 0x2a1820, tExp: 1.12,
     ridge: 0x3b2a3a, mote: { color: [1, 0.85, 0.6], add: false, a: 0.35, size: 0.045, rise: 0.05 } },
   noon: { top: 0x5f86ad, mid: 0xbfc6b6, hor: 0xe9dcae, sun: 0xfff2c8, sunCore: 0xffffff, sunDir: [-0.3, 0.75, -0.6], sunSize: 0.9985, cloud: 0.4, cloudDark: 0x9aa3a6, cloudLit: 0xffffff,
     fog: 0xddd0a2, fogNear: 40, fogFar: 520, ground: 0xb79a62, hemiSky: 0xfff6dc, hemiGround: 0x6a5a3c, hemiI: 0.74, sunLight: 0xfff0cc, sunI: 0.72, fill: 0xb8c4d8, fillI: 0.16,
+    tLit: 0xfffdf2, tShade: 0x929fbe, tRim: 0xffffff, ink: 0x241d1a, tExp: 1.1,
     ridge: 0x6f7a78, mote: { color: [1, 0.95, 0.75], add: false, a: 0.4, size: 0.05, rise: 0.02 } },
   mist: { top: 0x2b3848, mid: 0x62748a, hor: 0xa9b5bf, sun: 0xcfe0ee, sunCore: 0xf2f8ff, sunDir: [0.5, 0.1, -0.85], sunSize: 0.998, cloud: 0.9, cloudDark: 0x39434f, cloudLit: 0xc4d2de,
     fog: 0x9eabb6, fogNear: 18, fogFar: 270, ground: 0x717868, hemiSky: 0xc7d6e6, hemiGround: 0x3c4238, hemiI: 0.95, sunLight: 0xd6e4f2, sunI: 0.5, fill: 0xaab8cc, fillI: 0.3,
+    tLit: 0xf0f5fa, tShade: 0x8c9aae, tRim: 0xeaf4ff, ink: 0x1e2228, tExp: 1.08,
     ridge: 0x4a5663, mote: { color: [0.9, 0.95, 1], add: false, a: 0.3, size: 0.07, rise: 0 } },
   fire: { top: 0x05060d, mid: 0x24121c, hor: 0xff7a2a, sun: 0xff5a14, sunCore: 0xffc070, sunDir: [-0.2, 0.02, -1], sunSize: 1.1, cloud: 0.85, cloudDark: 0x100a0e, cloudLit: 0xff6a20,
     fog: 0x5a2a18, fogNear: 20, fogFar: 300, ground: 0x4a3226, hemiSky: 0xff9a5a, hemiGround: 0x1a1210, hemiI: 0.55, sunLight: 0xff7a30, sunI: 1.05, fill: 0x6a7fb0, fillI: 0.45,
+    tLit: 0xffe2c0, tShade: 0x5e4c74, tRim: 0xff9a48, ink: 0x160c0e, tExp: 1.12,
     ridge: 0x120c10, mote: { color: [1, 0.55, 0.15], add: true, a: 0.9, size: 0.035, rise: 1.6 } },
   blood: { top: 0x140a14, mid: 0x5c1622, hor: 0xe2482c, sun: 0xff4a2a, sunCore: 0xffd0a0, sunDir: [0.0, 0.1, -1], sunSize: 0.992, cloud: 0.8, cloudDark: 0x1c0c14, cloudLit: 0xff5a30,
     fog: 0x8a3024, fogNear: 30, fogFar: 420, ground: 0x6a4038, hemiSky: 0xff8a70, hemiGround: 0x2a1414, hemiI: 0.7, sunLight: 0xff6a40, sunI: 1.0, fill: 0x8090c0, fillI: 0.48,
+    tLit: 0xffeee2, tShade: 0x66507e, tRim: 0xff8a5a, ink: 0x1c0a10, tExp: 1.1,
     ridge: 0x1a0a12, mote: { color: [1, 0.4, 0.15], add: true, a: 0.8, size: 0.03, rise: 0.9 } },
 };
 const ARMY = {
@@ -2313,9 +2541,6 @@ const EYE_H = 2.5;
 const VM = (() => {
   const scene = new T.Scene();
   const cam = new T.PerspectiveCamera(70, 1, 0.03, 40);
-  const hemi = new T.HemisphereLight(0xffffff, 0x444444, 0.9), sun = new T.DirectionalLight(0xffffff, 1), fill = new T.DirectionalLight(0xffffff, 0.3);
-  scene.add(hemi, sun, sun.target, fill, fill.target);
-  fill.position.set(0, 2, 4);
   const level = new T.Group(); level.rotation.order = 'ZXY'; scene.add(level);
   const yaw = new T.Group(); level.add(yaw);
   const rig = new T.Group(); scene.add(rig);
@@ -2325,11 +2550,12 @@ const VM = (() => {
   const trail = new Trail(20, 0xffffff, 0.2); scene.add(trail.mesh);
   const recoil = new Spring(260, 20), recoilY = new Spring(200, 18);
   let slashT = 0, slashDelay = 0, kx = 1, base = 'idle', guardOn = false;
-  const skinM = mLam(0xd7a57c), sleeveM = new T.MeshLambertMaterial({ color: 0x2f6b48, map: TEX.cloth }), reinM = mLam(0x3a261a);
-  const bracerM = new T.MeshPhongMaterial({ color: 0x8a7a4a, specular: 0x3a342c, shininess: 22, map: TEX.lamellar, bumpMap: TEX.lamellarBump, bumpScale: 0.006 }), cuffM = goldMat();
+  const skinM = toonMat({ color: 0xdcab82, env: 'V', key: KEY, edge: 0.0, rim: 0.45, rimCut: 0.66 }), sleeveM = toonMat({ color: 0x2f6b48, env: 'V', key: KEY, rim: 0.4 }), reinM = toonMat({ color: 0x5a3a22, env: 'V', key: KEY, rim: 0 });
+  const bracerM = toonMat({ color: 0x8a7a4a, map: TEX.lamellar, env: 'V', key: KEY, spec: 0.35, shin: 14, rim: 0.7 }), cuffM = goldMat('V');
   const arm = (k, right) => {
     const a = makeArm(right, 0.31, 0.3, { sleeve: sleeveM, bracer: bracerM, gold: cuffM, skin: skinM });
     rig.add(a.up, a.lo, a.hand);
+    [a.up, a.lo, a.hand].forEach((n) => addInk(n, INK_V));
     return { S: V3(k * 0.21, -0.34, 0.08), E: V3(), H: V3(), k, up: a.up, lo: a.lo, hand: a.hand, pole: V3(k * 0.6, -0.8, 0.5).normalize() };
   };
   const aR = arm(1, true), aL = arm(-1, false);
@@ -2337,23 +2563,19 @@ const VM = (() => {
   const restL = V3(-0.15, -0.52, -0.38);
 
   function setHero(h) {
-    const junk = (o) => o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L) n.geometry.dispose(); if (n.material && n.material.dispose) n.material.dispose(); });
+    const junk = (o) => o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
     if (horse) { yaw.remove(horse.root); junk(horse.root); }
     if (weapon) { rig.remove(weapon.g); junk(weapon.g); }
-    horse = makeHorse(h.horse);
+    horse = makeHorse(h.horse, { env: 'V' });
     horse.root.position.set(0, -EYE_H - 0.16, -0.1);
-    yaw.add(horse.root);
-    weapon = makeWeapon(h.weapon, h.weaponOpt);
-    rig.add(weapon.g);
-    sleeveM.color.set(h.sleeve); bracerM.color.set(h.bracer);
+    yaw.add(horse.root); addInk(horse.root, INK_V);
+    weapon = makeWeapon(h.weapon, Object.assign({ env: 'V' }, h.weaponOpt));
+    rig.add(weapon.g); addInk(weapon.g, INK_V);
+    sleeveM.color.copy(celC(h.sleeve, 0.72)); bracerM.color.copy(celC(h.bracer, 0.6));
     trail.setColor(h.trail);
     anim.snap(VP.idle); base = 'idle';
   }
-  function syncLights() {
-    hemi.color.copy(World.hemi.color); hemi.groundColor.copy(World.hemi.groundColor); hemi.intensity = World.hemi.intensity;
-    sun.color.copy(World.sun.color); sun.intensity = World.sun.intensity;
-    fill.color.copy(World.fill.color); fill.intensity = World.fill.intensity + 0.15;
-  }
+  function syncLights() {}   // the toon environment (TOON.V) is filled by World.applyPalette
   function slash(dir, fast) {
     const sp = VP[dir], k = fast ? 0.7 : 1;
     anim.play([{ p: sp.s, d: 0.035 * k, e: 'out2' }, { p: sp.e, d: 0.12 * k, e: 'in2' }, { p: sp.e, d: 0.05 * k, e: 'lin' }, { p: VP[guardOn ? 'guard' : base], d: 0.2, e: 'io' }]);
@@ -2423,14 +2645,14 @@ const VM = (() => {
       trail.push(tA, tB);
     }
     trail.update(dt);
-    sun.position.copy(World.sunDir).applyQuaternion(s.invQ).multiplyScalar(10);
+    TOON.V.sun.value.copy(World.sunDir).applyQuaternion(s.invQ);
   }
   return { scene, cam, setHero, syncLights, slash, slashAt, setGuard, setBase, kick, hurt, raise, cheer, drop, rest, update, get guarding() { return guardOn; } };
 })();
 
 // ───────────────────────── fx: world particles + 2D brush layer ─────────────────────────
 const FX = (() => {
-  const sparks = new Particles(460, true, 0.08);
+  const sparks = new Particles(460, true, 0.08, 1);
   const dust = new Particles(280, false, 0.0);
   dust.points.renderOrder = 5; sparks.points.renderOrder = 6;
   World.scene.add(dust.points, sparks.points);
@@ -2442,22 +2664,22 @@ const FX = (() => {
       if (dir) { vx += dir.x * 3.5 * power; vy += dir.y * 3.5 * power; vz += dir.z * 3.5 * power; }
       const hot = Math.random();
       sparks.emit(p.x + rnd(-0.05, 0.05), p.y + rnd(-0.05, 0.05), p.z + rnd(-0.05, 0.05), vx, vy, vz,
-        rnd(0.25, 0.8), rnd(0.03, 0.085), 1, 0.5 + hot * 0.45, 0.12 + hot * 0.55, 1, 12, 1.3, 0);
+        rnd(0.25, 0.8), rnd(0.05, 0.14), 1, 0.5 + hot * 0.45, 0.12 + hot * 0.55, 1, 12, 1.3, 0);
     }
-    sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.1, 0.3 * power, 1, 0.92, 0.75, 0.7, 0, 0, 0.5 * power);
+    sparks.emit(p.x, p.y, p.z, 0, 0, 0, 0.11, 0.34 * power, 1, 0.95, 0.82, 0.85, 0, 0, 0.5 * power);     // the impact star
   }
   function shardBurst(p, n, r, g, b, dir) {
     for (let i = 0; i < n; i++) {
       const sp = rnd(1.5, 6);
       sparks.emit(p.x, p.y, p.z, rnd(-1, 1) * sp + (dir ? dir.x * 3 : 0), rnd(0.2, 1.2) * sp, rnd(-1, 1) * sp + (dir ? dir.z * 3 : 0),
-        rnd(0.3, 0.7), rnd(0.05, 0.11), r, g, b, 0.9, 11, 0.8, 0);
+        rnd(0.3, 0.7), rnd(0.1, 0.22), r, g, b, 0.9, 11, 0.8, 0);
     }
   }
   function dustBurst(p, n, spread, up, big) {
     const c = World.dust; big = big || 1;
     for (let i = 0; i < n; i++) {
       dust.emit(p.x + rnd(-spread, spread), rnd(0.1, 0.5), p.z + rnd(-spread, spread), rnd(-1.4, 1.4) * big, rnd(0.3, 1.5) * up, rnd(-1.4, 1.4) * big,
-        rnd(0.9, 2.1), rnd(0.5, 1.1) * big, c.r, c.g, c.b, rnd(0.12, 0.26), -0.12, 1.1, rnd(1.0, 2.3) * big);
+        rnd(0.8, 1.7), rnd(0.32, 0.72) * big, c.r, c.g, c.b, rnd(0.3, 0.5), -0.12, 1.1, rnd(0.6, 1.5) * big);
     }
   }
   function update(dt) { sparks.update(dt); dust.update(dt); }
@@ -2757,7 +2979,7 @@ const Rig = (() => {
     if (!E) return;
     [E.root, E.trail.mesh, E.rider.seat, E.fallSh].forEach((o) => {
       if (o.parent) o.parent.remove(o);
-      o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L && n.geometry !== REIN_G) n.geometry.dispose(); if (n.material && n.material.dispose) n.material.dispose(); });
+      o.traverse((n) => { if (n.geometry && n.geometry !== FIST_R && n.geometry !== FIST_L && n.geometry !== REIN_G) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
     });
     E = null;
   }
@@ -2767,6 +2989,7 @@ const Rig = (() => {
     rider.waist.add(weapon.g);
     rider.seat.position.set(0, horse.saddleY, -0.04); rider.seat.scale.setScalar(1.12); horse.body.add(rider.seat);
     const root = new T.Group(); root.add(horse.root); root.scale.setScalar(stage.scale || 1);
+    addInk(root, INK_W);
     World.scene.add(root);
     const trail = new Trail(16, 0xff6a3a, 0.14); World.scene.add(trail.mesh);
     const fallSh = mesh(new T.PlaneGeometry(2.0, 2.0), new T.MeshBasicMaterial({ map: TEX.shadow, transparent: true, depthWrite: false, color: 0x000000 }), 0, 0.03, 0, World.scene);
@@ -3659,6 +3882,7 @@ const Main = (() => {
   function resize() {
     const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
     renderer.setPixelRatio(PR); renderer.setSize(w, h, false);
+    TOON.res.value.set(w * PR, h * PR); TOON.px.value = 1.5 * PR;      // ink line: 1.5 CSS px
     Cam.resize(w, h);
     VM.cam.aspect = w / h; VM.cam.fov = Cam.baseFov; VM.cam.updateProjectionMatrix();
     F2.resize(w, h);

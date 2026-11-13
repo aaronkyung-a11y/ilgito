@@ -1,8 +1,9 @@
 // ───────────────────────── particles & trails ─────────────────────────
 const uPScale = { value: 600 }; // px per metre at 1m (set on resize)
-function partMat(additive, soft) {
+// shape: 0 = flat disc with a crisp edge (dust, motes), 1 = four-point star (sparks)
+function partMat(additive, soft, shape) {
   return new T.ShaderMaterial({
-    uniforms: { uScale: uPScale, uSoft: { value: soft } },
+    uniforms: { uScale: uPScale, uSoft: { value: soft }, uShape: { value: shape || 0 } },
     vertexShader: `
       attribute float aSize; attribute vec4 aColor; varying vec4 vColor; uniform float uScale;
       void main(){
@@ -12,10 +13,11 @@ function partMat(additive, soft) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      varying vec4 vColor; uniform float uSoft;
+      varying vec4 vColor; uniform float uSoft; uniform float uShape;
       void main(){
-        float d = length(gl_PointCoord - 0.5);
-        float a = smoothstep(0.5, uSoft, d) * vColor.a;
+        vec2 q = abs(gl_PointCoord - 0.5) * 2.0;
+        float d = uShape > 0.5 ? (pow(q.x, 0.55) + pow(q.y, 0.55)) * 0.5 : length(q) * 0.5;
+        float a = smoothstep(0.5, max(uSoft, 0.42), d) * vColor.a;
         if (a < 0.004) discard;
         gl_FragColor = vec4(vColor.rgb, a);
       }`,
@@ -24,7 +26,7 @@ function partMat(additive, soft) {
   });
 }
 class Particles {
-  constructor(n, additive, soft) {
+  constructor(n, additive, soft, shape) {
     this.n = n; this.i = 0; this.dirty = true;
     this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 4); this.size = new Float32Array(n);
     this.vel = new Float32Array(n * 3); this.life = new Float32Array(n); this.max = new Float32Array(n);
@@ -33,7 +35,7 @@ class Particles {
     g.setAttribute('position', new T.BufferAttribute(this.pos, 3).setUsage(T.DynamicDrawUsage));
     g.setAttribute('aColor', new T.BufferAttribute(this.col, 4).setUsage(T.DynamicDrawUsage));
     g.setAttribute('aSize', new T.BufferAttribute(this.size, 1).setUsage(T.DynamicDrawUsage));
-    this.points = new T.Points(g, partMat(additive, soft));
+    this.points = new T.Points(g, partMat(additive, soft, shape));
     this.points.frustumCulled = false;
   }
   emit(x, y, z, vx, vy, vz, life, size, r, g, b, a, grav = 0, drag = 0, grow = 0) {
@@ -91,8 +93,12 @@ class Trail {
       vertexShader: `attribute float aAlpha; attribute float aEdge; varying float vA; varying float vE;
         void main(){ vA = aAlpha; vE = aEdge; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `uniform vec3 uColor; uniform float uGain; varying float vA; varying float vE;
-        void main(){ float e = vE * vE; gl_FragColor = vec4(mix(uColor, vec3(1.0), e * 0.75), vA * (0.12 + 0.88 * e) * uGain); }`,
-      transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending, fog: false,
+        void main(){
+          // cel look: a white blade edge, a flat band of the trail colour behind it, hard steps between
+          float core = smoothstep(0.9, 0.94, vE), b2 = smoothstep(0.62, 0.66, vE), b1 = smoothstep(0.3, 0.34, vE), cut = smoothstep(0.05, 0.22, vA);
+          gl_FragColor = vec4(mix(mix(uColor, vec3(1.0), 0.35 * b2), vec3(1.0), core), cut * (0.2 * b1 + 0.2 * b2 + 0.52 * core) * uGain);
+        }`,
+      transparent: true, depthWrite: false, side: T.DoubleSide, fog: false,
     });
     this.mesh = new T.Mesh(g, this.mat);
     this.mesh.frustumCulled = false;

@@ -211,6 +211,22 @@ const S = {
     const t = await ev(() => { const I = window.__ilgito; I.G.noRender = true; const t0 = performance.now(); I.step(1 / 60, 300); return (performance.now() - t0) / 300; });
     console.log('logic+anim ms/frame (no GL):', t.toFixed(3));
   },
+  // geometry leak check: uploaded geometries vs geometries still reachable from the scene, over 4 full stage cycles
+  async leak() {
+    await p.click('#btnGo'); await wait(500);
+    const out = await ev(() => {
+      const I = window.__ilgito, G = I.G; G.tut.on = false; G.manual = true; G.auto = true; I.Game.tap();
+      const scene = I.World.scene, res = [];
+      const count = () => { const s = new Set(); scene.traverse((o) => { if (o.geometry) s.add(o.geometry); }); return s.size; };
+      G.noRender = true;
+      for (let k = 0; k < 21; k++) {
+        I.Game.startStage(k % 5); let n = 0; while (G.mode !== 'melee' && n++ < 900) I.step(0.033);
+        G.noRender = false; const m = I.info(); G.noRender = true; res.push((k % 5) + ':' + m.geo + '/' + count() + '/' + m.tex);
+      }
+      return res;
+    });
+    console.log('stage:uploaded/inScene/tex  ' + out.join(' '));
+  },
   // offline-render each cue to WAV so it can be inspected as a spectrogram: node test/run.mjs audio
   async audio() {
     const cues = {
@@ -280,10 +296,12 @@ const S = {
     for (let i = 0; i < 4; i++) { await wait(700); await shot('charge' + i + '_' + W); console.log(await st()); }
   },
   async melee() {
+    const stage = +(process.argv[5] || 0), hero = +(process.argv[6] || 0), tag = process.argv[5] ? '_s' + stage : '';
+    if (process.argv[5]) await ev(({ stage, hero }) => { const I = window.__ilgito; I.G.hero = I.HEROES[hero]; I.Save.d.cleared = stage; I.Save.d.tut = true; I.Game.toTitle(); }, { stage, hero });
     await p.click('#btnGo'); await wait(700);
     await ev(() => { const I = window.__ilgito; I.G.tut.on = false; I.Game.tap(); });
     await p.waitForFunction('window.__ilgito.G.mode === "melee"', null, { timeout: 60000 }).catch(() => errs.push('no melee'));
-    for (let i = 0; i < 6; i++) { await wait(900); await shot('melee' + i + '_' + W); console.log(await st()); }
+    for (let i = 0; i < 6; i++) { await wait(900); await shot('melee' + i + '_' + W + tag); console.log(await st()); }
   },
   async auto() {
     const stage = +(process.argv[5] || 0), hero = +(process.argv[6] || 0);

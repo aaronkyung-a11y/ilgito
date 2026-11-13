@@ -5,7 +5,6 @@ const World = (() => {
   const hemi = new T.HemisphereLight(0xffffff, 0x333333, 0.9);
   const sun = new T.DirectionalLight(0xffffff, 1);
   const fill = new T.DirectionalLight(0x8899bb, 0.3);
-  scene.add(hemi, sun, sun.target, fill, fill.target);
   const sunDir = V3(0.2, 0.25, -1).normalize();
 
   // ── sky dome
@@ -32,13 +31,18 @@ const World = (() => {
         vec3 col = mix(uHor, uMid, smoothstep(0.0, 0.2, h));
         col = mix(col, uTop, smoothstep(0.12, 0.7, h));
         float sd = max(dot(d, normalize(uSunDir)), 0.0);
-        col += uSun * (pow(sd, 6.0) * 0.4 + pow(sd, 40.0) * 0.5);
-        col = mix(col, uSunCore, smoothstep(uSunSize, uSunSize + 0.0012, sd));
+        float hasSun = step(uSunSize, 0.99999);
+        col = mix(col, uSun, (0.15 * smoothstep(0.953, 0.956, sd) + 0.2 * smoothstep(0.984, 0.9856, sd)) * hasSun + pow(sd, 5.0) * 0.22);
+        col = mix(col, uSunCore, smoothstep(uSunSize, uSunSize + 0.0005, sd));
         vec2 uv = d.xz / (abs(d.y) + 0.22);
-        float c = fbm(uv * 1.3 + vec2(uTime * 0.008, 0.0));
-        float cl = smoothstep(0.42, 0.78, c + uCloud * 0.25 - 0.12) * uCloud * smoothstep(0.015, 0.16, h);
-        vec3 cc = mix(uCloudDark, uCloudLit, clamp(pow(sd, 2.5) * 0.9 + (1.0 - smoothstep(0.0, 0.5, h)) * 0.35, 0.0, 1.0));
-        col = mix(col, cc, cl);
+        float c = fbm(uv * 1.15 + vec2(uTime * 0.006, 0.0));
+        float thr = 0.66 - uCloud * 0.2;
+        float m1 = smoothstep(thr, thr + 0.01, c) * smoothstep(0.02, 0.09, h);
+        float m2 = smoothstep(thr + 0.05, thr + 0.06, c);
+        float toSun = clamp(pow(sd, 2.0) * 0.9 + (1.0 - smoothstep(0.0, 0.5, h)) * 0.3, 0.0, 1.0);
+        vec3 body = mix(uCloudDark, uCloudLit, toSun * 0.7);
+        vec3 cc = mix(mix(uCloudLit, vec3(1.0), 0.3), body, m2);
+        col = mix(col, cc, m1 * min(1.0, uCloud * 1.4));
         col = mix(col, uHor, smoothstep(0.03, -0.06, h));
         col += uFlash;
         gl_FragColor = vec4(col, 1.0);
@@ -57,25 +61,30 @@ const World = (() => {
   function makeGroundTex() {
     const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
     const g = c.getContext('2d'); const r = mulberry(7);
-    g.fillStyle = '#9a9a9a'; g.fillRect(0, 0, S, S);
-    for (let i = 0; i < 300; i++) {
-      const x = r() * S, y = r() * S, s = 12 + r() * 64, v = 95 + ((r() * 100) | 0), a = 0.08 + r() * 0.12, rot = r() * PI, e = 0.4 + r() * 0.6;
-      g.fillStyle = `rgba(${v},${v},${v},${a})`;
-      wrapDraw(g, S, x, y, s, (px, py) => { g.beginPath(); g.ellipse(px, py, s, s * e, rot, 0, TAU); g.fill(); });
+    g.fillStyle = '#b6b6b6'; g.fillRect(0, 0, S, S);
+    const blob = (px, py, s, e, rot, n) => {
+      g.beginPath();
+      for (let k = 0; k <= n; k++) { const a = (k / n) * TAU, rr = s * (0.72 + 0.28 * Math.sin(a * 3 + rot * 5) + 0.12 * Math.sin(a * 5 + rot)); const x = Math.cos(a) * rr, y = Math.sin(a) * rr * e, cs = Math.cos(rot), sn = Math.sin(rot); if (k) g.lineTo(px + x * cs - y * sn, py + x * sn + y * cs); else g.moveTo(px + x * cs - y * sn, py + x * sn + y * cs); }
+      g.closePath(); g.fill();
+    };
+    for (let i = 0; i < 46; i++) {     // broad flat patches, hard-edged
+      const x = r() * S, y = r() * S, s = 26 + r() * 62, e = 0.35 + r() * 0.4, rot = r() * PI, lt = r() < 0.5;
+      g.fillStyle = lt ? '#c8c8c8' : '#a2a2a2';
+      wrapDraw(g, S, x, y, s, (px, py) => blob(px, py, s, e, rot, 18));
     }
-    for (let i = 0; i < 3200; i++) {
-      const x = r() * S, y = r() * S, s = 0.6 + r() * 1.8, v = r() < 0.5 ? 60 + r() * 40 : 170 + r() * 60;
-      g.fillStyle = `rgba(${v | 0},${v | 0},${v | 0},${0.25 + r() * 0.35})`;
-      g.fillRect(x, y, s, s);
+    for (let i = 0; i < 60; i++) {     // small darker clumps
+      const x = r() * S, y = r() * S, s = 4 + r() * 10, e = 0.5 + r() * 0.4, rot = r() * PI;
+      g.fillStyle = '#8e8e8e';
+      wrapDraw(g, S, x, y, s, (px, py) => blob(px, py, s, e, rot, 10));
     }
     g.lineCap = 'round';
-    for (let i = 0; i < 420; i++) {
-      const x = r() * S, y = r() * S, l = 3 + r() * 9, a = r() * TAU, v = r() < 0.6 ? 70 : 185;
-      g.strokeStyle = `rgba(${v},${v},${v},${0.18 + r() * 0.2})`; g.lineWidth = 0.8 + r() * 1.4;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    for (let i = 0; i < 84; i++) {    // ink strokes: tufts of dry grass, scuffs
+      const x = r() * S, y = r() * S, l = 5 + r() * 12, a = -PI / 2 + (r() - 0.5) * 1.3;
+      g.strokeStyle = 'rgba(84,84,84,' + (0.45 + r() * 0.3) + ')'; g.lineWidth = 1.2 + r() * 1.3;
+      for (let k = -1; k <= 1; k++) { const aa = a + k * (0.25 + r() * 0.2); g.beginPath(); g.moveTo(x + k * 2.5, y); g.quadraticCurveTo(x + k * 2.5 + Math.cos(aa) * l * 0.5, y + Math.sin(aa) * l * 0.5, x + k * 3 + Math.cos(aa + k * 0.3) * l, y + Math.sin(aa + k * 0.3) * l); g.stroke(); }
     }
     const t = new T.CanvasTexture(c);
-    t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(150, 150);
+    t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(150, 150); t.anisotropy = 4;
     return t;
   }
   const gTex = makeGroundTex();
@@ -85,31 +94,36 @@ const World = (() => {
     for (let i = 0; i < n; i++) { const v = 0.74 + rr() * 0.34; cols[i * 3] = v; cols[i * 3 + 1] = v * (0.95 + rr() * 0.07); cols[i * 3 + 2] = v * (0.9 + rr() * 0.08); }
     gGeo.setAttribute('color', new T.BufferAttribute(cols, 3));
   }
-  const gMat = new T.MeshLambertMaterial({ map: gTex, vertexColors: true });
+  const gMat = toonMat({ map: gTex, vcol: true, edge: -2, rim: 0 });
   const ground = new T.Mesh(gGeo, gMat); scene.add(ground);
 
   // ── mountains
   const ridges = [];
   function ridge(radius, hMin, hMax, seed) {
-    const seg = 120, pos = [], idx = [], r = mulberry(seed);
+    const seg = 120, pos = [], idx = [], r = mulberry(seed), ink = radius * 0.0026;
     const ph = [r() * TAU, r() * TAU, r() * TAU, r() * TAU, r() * TAU];
     for (let i = 0; i <= seg; i++) {
       const a = (i / seg) * TAU;
       let h = 0.45 + 0.24 * Math.sin(a * 3 + ph[0]) + 0.17 * Math.sin(a * 7 + ph[1]) + 0.13 * Math.sin(a * 13 + ph[2]) + 0.09 * Math.sin(a * 23 + ph[3]) + 0.06 * Math.sin(a * 41 + ph[4]);
       h = hMin + (hMax - hMin) * sat(h);
+      const mid = Math.max(1.5, h * (0.4 + 0.16 * Math.sin(a * 11 + ph[1]) + 0.08 * Math.sin(a * 29 + ph[2])));
       const x = Math.sin(a) * radius, z = Math.cos(a) * radius;
-      pos.push(x, -8, z, x, h, z);
+      pos.push(x, -8, z, x, mid, z, x, mid, z, x, h, z, x, h, z, x, h + ink, z);      // haze, haze | body, body | ink, ink
     }
-    for (let i = 0; i < seg; i++) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    for (let i = 0; i < seg; i++) for (let q = 0; q < 6; q += 2) { const k = i * 6 + q; idx.push(k, k + 1, k + 6, k + 1, k + 7, k + 6); }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
-    g.setAttribute('color', new T.BufferAttribute(new Float32Array((seg + 1) * 6), 3));
+    g.setAttribute('color', new T.BufferAttribute(new Float32Array((seg + 1) * 18), 3));
     const m = new T.Mesh(g, new T.MeshBasicMaterial({ vertexColors: true, fog: false, side: T.DoubleSide }));
     m.frustumCulled = false; scene.add(m); ridges.push(m);
   }
-  function tintRidge(m, top, bottom) {
+  function tintRidge(m, top, bottom, ink) {
     const c = m.geometry.attributes.color, n = c.count;
-    for (let i = 0; i < n; i += 2) { c.setXYZ(i, bottom.r, bottom.g, bottom.b); c.setXYZ(i + 1, top.r, top.g, top.b); }
+    for (let i = 0; i < n; i += 6) {
+      c.setXYZ(i, bottom.r, bottom.g, bottom.b); c.setXYZ(i + 1, bottom.r, bottom.g, bottom.b);
+      c.setXYZ(i + 2, top.r, top.g, top.b); c.setXYZ(i + 3, top.r, top.g, top.b);
+      c.setXYZ(i + 4, ink.r, ink.g, ink.b); c.setXYZ(i + 5, ink.r, ink.g, ink.b);
+    }
     c.needsUpdate = true;
   }
   ridge(560, 22, 120, 3); ridge(470, 10, 74, 5); ridge(390, 4, 40, 9);
@@ -117,7 +131,7 @@ const World = (() => {
   ridges.forEach((m) => { m.material.depthWrite = false; });
 
   // ── props (speed cues)
-  const propM = mLam(0x7a705e), rockM = mLam(0x6b6359);
+  const propM = toonMat({ color: 0x7a705e, rim: 0 }), rockM = toonMat({ color: 0x6b6359, rim: 0.15 });
   {
     const r = mulberry(21);
     const tuftG = flat(new T.ConeGeometry(0.13, 0.24, 4)); tuftG.translate(0, 0.11, 0);
@@ -136,9 +150,9 @@ const World = (() => {
       o.position.set(Math.sin(a) * d, 0.02, Math.cos(a) * d); o.rotation.set(r() * 3, r() * 3, r() * 3);
       const s = 0.3 + r() * 1.1; o.scale.set(s, s * 0.45, s); o.updateMatrix(); rocks.setMatrixAt(i, o.matrix);
     }
-    scene.add(rocks);
+    scene.add(rocks, inkInstanced(rocks, INK_W));
     const stickG = new T.BoxGeometry(0.03, 1.5, 0.03); stickG.translate(0, 0.6, 0);
-    const sticks = new T.InstancedMesh(stickG, mLam(0x2c221c), 110);
+    const sticks = new T.InstancedMesh(stickG, toonMat({ color: 0x2c221c, rim: 0 }), 110);
     for (let i = 0; i < 110; i++) {
       const a = r() * TAU, d = 38 + r() * 46;
       o.position.set(Math.sin(a) * d, 0, Math.cos(a) * d); o.rotation.set(rnd(-0.6, 0.6), r() * TAU, rnd(-0.6, 0.6));
@@ -165,9 +179,9 @@ const World = (() => {
   function makeFlag(key, x, z, face, hgt, big) {
     const grp = new T.Group(); grp.position.set(x, 0, z); grp.rotation.y = face;
     const w = big ? 3.4 : 1.5, h = big ? 6 : 2.6;
-    mesh(new T.CylinderGeometry(0.05, 0.07, hgt, 5), mLam(0x2a211b), 0, hgt / 2, 0, grp);
+    mesh(new T.CylinderGeometry(0.05, 0.07, hgt, 5), toonMat({ color: 0x2a211b, rim: 0 }), 0, hgt / 2, 0, grp);
     const geo = new T.PlaneGeometry(w, h, 5, 4); geo.translate(w / 2, 0, 0);
-    const m = new T.MeshLambertMaterial({ map: drawFlagTex(key, '#444', '#ddd', '軍'), side: T.DoubleSide });
+    const m = toonMat({ map: drawFlagTex(key, '#444', '#ddd', '軍'), side: T.DoubleSide, rim: 0, edge: -0.3 });
     const f = mesh(geo, m, 0, hgt - h / 2 - 0.1, 0, grp);
     flags.push({ geo, base: geo.attributes.position.array.slice(), w, ph: rnd(TAU), m });
     scene.add(grp);
@@ -180,7 +194,7 @@ const World = (() => {
     const headG = flat(new T.IcosahedronGeometry(0.17, 0)); headG.translate(0, 1.74, 0);
     const spearG = new T.BoxGeometry(0.035, 2.9, 0.035); spearG.translate(0.3, 1.45, 0.08);
     const shieldG = flat(new T.CylinderGeometry(0.32, 0.32, 0.06, 7)); shieldG.rotateX(PI / 2); shieldG.translate(-0.1, 1.02, 0.22);
-    const bodyM = mLam(0xffffff), headM = mLam(0x2b2622), spearM = mLam(0x1e1814), shieldM = mLam(0xffffff);
+    const bodyM = toonMat({ rim: 0 }), headM = toonMat({ color: 0x2b2622, rim: 0 }), spearM = toonMat({ color: 0x1e1814, rim: 0 }), shieldM = toonMat({ rim: 0 });
     const bodies = new T.InstancedMesh(bodyG, bodyM, n), heads = new T.InstancedMesh(headG, headM, n);
     const spears = new T.InstancedMesh(spearG, spearM, n), shields = new T.InstancedMesh(shieldG, shieldM, cols * 2);
     const o = new T.Object3D(); let si = 0;
@@ -214,7 +228,7 @@ const World = (() => {
   }
 
   // ── fortress (foe side) & camp (ally side)
-  const stoneM = mLam(0x4d443c), woodM = mLam(0x5c2c22), roofM = mLam(0x26221f), darkM = mLam(0x0c0a09);
+  const stoneM = toonMat({ color: 0x4d443c, rim: 0 }), woodM = toonMat({ color: 0x5c2c22, rim: 0 }), roofM = toonMat({ color: 0x26221f, rim: 0 }), darkM = toonMat({ color: 0x0c0a09, rim: 0 });
   function roofG(w, h, d, inset, ridgeK) {
     const g = new T.BoxGeometry(w, h, d), p = g.attributes.position;
     for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) { p.setX(i, p.getX(i) * inset); p.setZ(i, p.getZ(i) * ridgeK); }
@@ -237,19 +251,20 @@ const World = (() => {
       mesh(boxG(18, 6, 10), woodM, x, 29, 2, f);
       mesh(roofG(28, 6, 17, 0.5, 0.2), roofM, x, 35, 2, f);
     });
+    addInk(f, INK_FAR);
   }
   {
     const cmp = new T.Group(); cmp.position.z = 150; scene.add(cmp);
-    const tentM = mLam(0xb9ab8c), r = mulberry(77);
+    const tentM = toonMat({ color: 0xb9ab8c, rim: 0 }), r = mulberry(77);
     const tentG = flat(new T.ConeGeometry(1, 1, 6)); tentG.translate(0, 0.5, 0);
     const tents = new T.InstancedMesh(tentG, tentM, 26), o = new T.Object3D();
     for (let i = 0; i < 26; i++) {
       o.position.set((r() - 0.5) * 300, 0, 8 + r() * 70); const s = 5 + r() * 5; o.scale.set(s, s * (0.8 + r() * 0.5), s);
       o.rotation.y = r() * TAU; o.updateMatrix(); tents.setMatrixAt(i, o.matrix);
     }
-    cmp.add(tents);
+    cmp.add(tents, inkInstanced(tents, INK_FAR));
     const palG = flat(new T.ConeGeometry(0.28, 4.4, 5)); palG.translate(0, 2.2, 0);
-    const pal = new T.InstancedMesh(palG, mLam(0x3a2c22), 150);
+    const pal = new T.InstancedMesh(palG, toonMat({ color: 0x3a2c22, rim: 0 }), 150);
     for (let i = 0; i < 150; i++) { o.position.set((i - 74.5) * 2.2, 0, -8 + Math.sin(i * 0.7) * 0.4); o.scale.set(1, 0.85 + r() * 0.3, 1); o.rotation.set(0, r() * 3, 0); o.updateMatrix(); pal.setMatrixAt(i, o.matrix); }
     cmp.add(pal);
   }
@@ -298,7 +313,10 @@ const World = (() => {
     hemi.color.set(p.hemiSky); hemi.groundColor.set(p.hemiGround); hemi.intensity = p.hemiI;
     sun.color.set(p.sunLight); sun.intensity = p.sunI;
     fill.color.set(p.fill); fill.intensity = p.fillI;
-    ridges.forEach((m, i) => tintRidge(m, mixHex(p.hor, p.ridge, [0.34, 0.55, 0.78][i]), mixHex(p.hor, p.fog, 0.6)));
+    ridges.forEach((m, i) => tintRidge(m, mixHex(p.hor, p.ridge, [0.34, 0.55, 0.78][i]), mixHex(p.hor, p.ridge, [0.14, 0.26, 0.4][i]), mixHex(p.ridge, p.ink, [0.35, 0.55, 0.8][i])));
+    const E = TOON.W, EV = TOON.V, ex = p.tExp || 1;
+    E.sun.value.copy(sunDir); E.lit.value.set(p.tLit).multiplyScalar(ex); E.shade.value.set(p.tShade).multiplyScalar(ex); E.rim.value.set(p.tRim); E.ink.value.set(p.ink);
+    EV.lit.value.copy(E.lit.value); EV.shade.value.copy(E.shade.value); EV.rim.value.copy(E.rim.value); EV.ink.value.copy(E.ink.value);
     stoneM.color.copy(mixHex(0x4d443c, p.fog, 0.15));
     const d = mixHex(p.ground, p.fog, 0.5); dust.r = d.r; dust.g = d.g; dust.b = d.b;
     moteSpec = p.mote;

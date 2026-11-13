@@ -1,4 +1,4 @@
-// ───────────────────────── geometry lofts & painted textures (v0.2 models) ─────────────────────────
+// ───────────────────────── geometry lofts & painted textures ─────────────────────────
 // loft a smooth skin over elliptical rings. ring: { c:[x,y,z], ax:[..], ay:[..], rx, ry, e (superellipse), col (vertex tint), v }
 function loftG(rings, seg, o) {
   o = o || {}; seg = seg || 12;
@@ -160,171 +160,144 @@ function orientXY(o, xdir, yhint) {
   _m4.makeBasis(_X, _Y, _Z); o.quaternion.setFromRotationMatrix(_m4);
 }
 
-// ── painted textures (canvas). greyscale ones are tinted by material.color
+// ── painted textures (canvas), cel style: flat fills and ink lines. greyscale ones are tinted by the material colour
 const TEX = (() => {
   const mk = (w, h, fn, rep) => {
     const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h);
     const t = new T.CanvasTexture(c); if (rep) { t.wrapS = t.wrapT = T.RepeatWrapping; } t.anisotropy = 4; return t;
   };
   const r = mulberry(99);
-  // lamellar (찰갑): rows of small laced plates
-  function lam(g, W, H, bump) {
+  // lamellar (찰갑): rows of small plates, each a flat fill with an ink edge, a shadow under the row above and one highlight tick
+  const lamellar = mk(256, 256, (g, W, H) => {
     const pw = W / 8, ph = H / 6;
-    g.fillStyle = bump ? '#202020' : '#5a5650'; g.fillRect(0, 0, W, H);
-    for (let row = -1; row < 7; row++) for (let c = -1; c < 9; c++) {
-      const x = c * pw + (row % 2 ? pw / 2 : 0), y = row * ph, v = bump ? 205 : 168 + ((r() * 40) | 0);
-      const gr = g.createLinearGradient(x, y, x, y + ph * 1.18);
-      if (bump) { gr.addColorStop(0, '#6a6a6a'); gr.addColorStop(0.35, '#e8e8e8'); gr.addColorStop(1, '#ffffff'); }
-      else { gr.addColorStop(0, `rgb(${v - 70},${v - 72},${v - 76})`); gr.addColorStop(0.3, `rgb(${v},${v},${v - 4})`); gr.addColorStop(0.85, `rgb(${v + 14},${v + 13},${v + 8})`); gr.addColorStop(1, `rgb(${v - 30},${v - 32},${v - 36})`); }
-      g.fillStyle = gr;
-      const x0 = x + 1.2, x1 = x + pw - 1.2, y0 = y, y1 = y + ph * 1.16, rr = pw * 0.3;
-      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y0); g.lineTo(x1, y1 - rr); g.quadraticCurveTo(x1, y1, x1 - rr, y1); g.lineTo(x0 + rr, y1); g.quadraticCurveTo(x0, y1, x0, y1 - rr); g.closePath(); g.fill();
-      g.fillStyle = bump ? '#303030' : 'rgba(30,22,16,0.8)';
-      g.fillRect(x + pw * 0.3, y + ph * 0.34, 2.2, 2.2); g.fillRect(x + pw * 0.62, y + ph * 0.34, 2.2, 2.2);
-      if (!bump) { g.fillStyle = 'rgba(150,40,26,0.55)'; g.fillRect(x + pw * 0.28, y + ph * 0.52, pw * 0.44, 1.6); }
+    g.fillStyle = '#565656'; g.fillRect(0, 0, W, H);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    for (let row = 6; row >= -1; row--) for (let c = -1; c < 9; c++) {
+      const x = c * pw + (row % 2 ? pw / 2 : 0), y = row * ph, x0 = x + 0.8, x1 = x + pw - 0.8, y1 = y + ph * 1.2, rr = pw * 0.34;
+      const path = () => { g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.lineTo(x1, y1 - rr); g.quadraticCurveTo(x1, y1, x1 - rr, y1); g.lineTo(x0 + rr, y1); g.quadraticCurveTo(x0, y1, x0, y1 - rr); g.closePath(); };
+      path(); g.fillStyle = (c + row) % 2 ? '#dcdcdc' : '#d0d0d0'; g.fill();
+      g.save(); path(); g.clip(); g.fillStyle = '#a4a4a4'; g.fillRect(x, y, pw, ph * 0.2); g.restore();
+      path(); g.strokeStyle = '#565656'; g.lineWidth = 2.2; g.stroke();
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(x0 + pw * 0.24, y + ph * 0.36); g.lineTo(x0 + pw * 0.24, y + ph * 0.74); g.stroke();
+      g.fillStyle = '#565656'; g.fillRect(x + pw * 0.56, y + ph * 0.42, 2.4, 2.4); g.fillRect(x + pw * 0.56, y + ph * 0.66, 2.4, 2.4);
     }
-  }
-  const lamellar = mk(256, 256, (g, W, H) => lam(g, W, H, false), true);
-  const lamellarBump = mk(256, 256, (g, W, H) => lam(g, W, H, true), true);
-  const cloth = mk(128, 128, (g, W, H) => {
-    g.fillStyle = '#e4e4e4'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 2600; i++) { const v = 190 + ((r() * 60) | 0); g.fillStyle = `rgba(${v},${v},${v},0.5)`; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1); }
-    for (let x = 0; x < W; x += 2) { g.fillStyle = `rgba(0,0,0,${0.03 + r() * 0.05})`; g.fillRect(x, 0, 1, H); }
   }, true);
-  const leather = mk(128, 128, (g, W, H) => {
-    g.fillStyle = '#d0d0d0'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 500; i++) { const v = 150 + ((r() * 90) | 0); g.fillStyle = `rgba(${v},${v},${v},0.35)`; g.beginPath(); g.arc(r() * W, r() * H, 1 + r() * 5, 0, TAU); g.fill(); }
-  }, true);
-  const coat = mk(256, 256, (g, W, H) => {
-    g.fillStyle = '#e9e9e9'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 90; i++) { const v = 205 + ((r() * 45) | 0); g.fillStyle = `rgba(${v},${v},${v},0.3)`; g.beginPath(); g.ellipse(r() * W, r() * H, 8 + r() * 26, 6 + r() * 16, r() * 3, 0, TAU); g.fill(); }
-    g.lineCap = 'round';
-    for (let i = 0; i < 5200; i++) { const x = r() * W, y = r() * H, v = r() < 0.5 ? 150 : 255; g.strokeStyle = `rgba(${v},${v},${v},${0.1 + r() * 0.12})`; g.lineWidth = 0.7; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r() - 0.5) * 2, y + 3 + r() * 4); g.stroke(); }
-  }, true);
+  // hair for beards and hair caps: a flat tone with a few bold strands
   const hairT = mk(64, 128, (g, W, H) => {
-    g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 260; i++) { const x = r() * W, v = 90 + ((r() * 165) | 0); g.strokeStyle = `rgba(${v},${v},${v},0.55)`; g.lineWidth = 0.6 + r(); g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (r() - 0.5) * 6, H); g.stroke(); }
+    g.fillStyle = '#d2d2d2'; g.fillRect(0, 0, W, H); g.lineCap = 'round';
+    for (let i = 0; i < 9; i++) { const x = (i + 0.5) / 9 * W + (r() - 0.5) * 5; g.strokeStyle = i % 3 === 1 ? '#ffffff' : '#767676'; g.lineWidth = i % 3 === 1 ? 1.6 : 2 + r() * 1.6; g.beginPath(); g.moveTo(x, -4); g.quadraticCurveTo(x + (r() - 0.5) * 10, H * 0.5, x + (r() - 0.5) * 8, H + 4); g.stroke(); }
   }, true);
+  // cut-out hair (manes, tails, plumes, tassels): the root is at the bottom of the canvas (v = 0), clumps taper to points at v = 1
   const hairA = mk(64, 128, (g, W, H) => {
     g.clearRect(0, 0, W, H); g.lineCap = 'round';
-    g.fillStyle = '#c4c4c4'; g.fillRect(0, H * 0.6, W, H * 0.4);
-    for (let i = 0; i < 46; i++) { const x = r() * W, v = 150 + ((r() * 90) | 0); g.strokeStyle = `rgb(${v},${v},${v})`; g.lineWidth = 1 + r() * 1.5; g.beginPath(); g.moveTo(x, H); g.lineTo(x + (r() - 0.5) * 5, H * 0.6); g.stroke(); }
-    for (let i = 0; i < 130; i++) {
-      const x = r() * W, len = H * (0.5 + r() * 0.5), v = 158 + ((r() * 97) | 0);
-      g.strokeStyle = `rgb(${v},${v},${v})`; g.lineWidth = 2.4 + r() * 3.2;
-      g.beginPath(); g.moveTo(x, H); g.quadraticCurveTo(x + (r() - 0.5) * 8, H - len * 0.5, x + (r() - 0.5) * 14, H - len); g.stroke();
+    g.fillStyle = '#d0d0d0'; g.fillRect(0, H * 0.6, W, H * 0.4);
+    const n = 5;
+    for (let pass = 0; pass < 2; pass++) for (let i = -1; i <= n; i++) {
+      const x0 = (i / n) * W - 3 + pass * (W / n / 2), x1 = x0 + W / n + 6, xm = (x0 + x1) / 2 + (r() - 0.5) * 9, top = H * (0.03 + r() * (pass ? 0.3 : 0.42));
+      g.fillStyle = pass ? '#dadada' : '#c2c2c2';
+      g.beginPath(); g.moveTo(x0, H * 0.68); g.quadraticCurveTo(x0 + 1, H * 0.4, xm, top); g.quadraticCurveTo(x1 - 1, H * 0.4, x1, H * 0.68); g.closePath(); g.fill();
+      g.strokeStyle = pass ? '#ffffff' : '#9c9c9c'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0 + 2, H); g.quadraticCurveTo(x0 + 2.5, H * 0.45, xm, top + 3); g.stroke();
     }
   }, true);
   hairA.wrapT = T.ClampToEdgeWrapping;
-  // a small sky for metal to mirror (equirectangular)
-  const env = mk(256, 128, (g, W, H) => {
-    const gr = g.createLinearGradient(0, 0, 0, H);
-    gr.addColorStop(0, '#9fb4c8'); gr.addColorStop(0.38, '#e8e4d8'); gr.addColorStop(0.5, '#fff6e0'); gr.addColorStop(0.56, '#6a5a48'); gr.addColorStop(1, '#1c1612');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    const sg = g.createRadialGradient(W * 0.3, H * 0.3, 2, W * 0.3, H * 0.3, 46); sg.addColorStop(0, 'rgba(255,255,255,1)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = sg; g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 7; i++) { g.fillStyle = `rgba(40,32,26,${0.25 + r() * 0.3})`; g.fillRect(r() * W, H * 0.47, 6 + r() * 26, H * 0.1); }
-  });
-  env.mapping = T.EquirectangularReflectionMapping;
+  // ground shadow: a flat, hard-edged ellipse
   const shadow = mk(128, 128, (g, W, H) => {
     const gr = g.createRadialGradient(W / 2, H / 2, 4, W / 2, H / 2, W / 2);
-    gr.addColorStop(0, 'rgba(0,0,0,0.82)'); gr.addColorStop(0.45, 'rgba(0,0,0,0.6)'); gr.addColorStop(0.8, 'rgba(0,0,0,0.16)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, 'rgba(0,0,0,0.5)'); gr.addColorStop(0.8, 'rgba(0,0,0,0.5)'); gr.addColorStop(0.86, 'rgba(0,0,0,0.0)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr; g.fillRect(0, 0, W, H);
   });
   const feather = mk(32, 256, (g, W, H) => {
-    const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, '#b89a6a'); gr.addColorStop(0.5, '#f2e6c8'); gr.addColorStop(1, '#b89a6a');
-    g.fillStyle = gr; g.fillRect(0, 0, W, H);
-    for (let y = 6; y < H; y += 17) { g.fillStyle = 'rgba(40,24,14,0.85)'; g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(W / 2, y + 7, W, y); g.lineTo(W, y + 5); g.quadraticCurveTo(W / 2, y + 12, 0, y + 5); g.fill(); }
-    g.fillStyle = 'rgba(60,40,24,0.9)'; g.fillRect(W / 2 - 1, 0, 2, H);
+    g.fillStyle = '#f4e8c8'; g.fillRect(0, 0, W, H);
+    for (let y = 6; y < H; y += 17) { g.fillStyle = '#3a2416'; g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(W / 2, y + 7, W, y); g.lineTo(W, y + 5.5); g.quadraticCurveTo(W / 2, y + 12.5, 0, y + 5.5); g.fill(); }
+    g.fillStyle = '#3a2416'; g.fillRect(W / 2 - 1.2, 0, 2.4, H); g.fillRect(0, 0, 2.2, H); g.fillRect(W - 2.2, 0, 2.2, H);
   });
   const css = (c) => '#' + new T.Color(c).getHexString();
   const cache = {};
   const memo = (key, make) => cache[key] || (cache[key] = make());
-  // face: SphereGeometry maps the front of the head to u = 0.25
+  // face, drawn as line art over flat skin. SphereGeometry maps the front of the head to u = 0.25 (x = 128 here); canvas left = the general's right
   function face(look) {
-    return memo('f' + [look.skin, look.hair, look.beard, look.patch, look.scar, look.helm === 'crown'].join(), () => mk(512, 256, (g, W, H) => {
-      const skin = new T.Color(look.skin || 0xd7a57c), hair = css(look.hair || 0x15110f), cx = 128;
-      const sk = (m) => '#' + skin.clone().multiplyScalar(m).getHexString();
+    return memo('f' + [look.skin, look.hair, look.beard, look.patch, look.scar, look.helm === 'crown'].join(), () => mk(1024, 512, (g) => {
+      const W = 512, H = 256; g.scale(2, 2);
+      const skin = new T.Color(look.skin || 0xdcab82), hair = css(look.hair || 0x1c1614), cx = 128, ink = '#22120c';
+      const sk = (m, red) => '#' + skin.clone().multiplyScalar(m).lerp(new T.Color(0xb04a34), red || 0).getHexString();
+      g.lineCap = 'round'; g.lineJoin = 'round';
       g.fillStyle = sk(1); g.fillRect(0, 0, W, H);
-      // hair round the back and sides
-      g.fillStyle = hair; g.fillRect(232, 0, 280, H); g.fillRect(0, 0, 24, H);
-      let gr = g.createLinearGradient(196, 0, 236, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, hair); g.fillStyle = gr; g.fillRect(196, 0, 40, H);
-      gr = g.createLinearGradient(60, 0, 20, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, hair); g.fillStyle = gr; g.fillRect(20, 0, 40, H);
-      // modelling: cheek hollows, brow shadow, forehead light
-      gr = g.createRadialGradient(cx, 118, 20, cx, 118, 82); gr.addColorStop(0, 'rgba(255,236,210,0.28)'); gr.addColorStop(0.6, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(60,24,10,0.35)');
-      g.fillStyle = gr; g.fillRect(40, 30, 176, 190);
-      g.fillStyle = 'rgba(70,30,14,0.3)'; g.beginPath(); g.ellipse(cx, 102, 46, 9, 0, 0, TAU); g.fill();
+      // flat shadow shapes: under the brow, down one side of the nose, under the lip, along the jaw
+      g.fillStyle = sk(0.8, 0.12);
+      [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 6, 101); g.quadraticCurveTo(cx + k * 26, 95, cx + k * 46, 94); g.quadraticCurveTo(cx + k * 44, 104, cx + k * 30, 106); g.quadraticCurveTo(cx + k * 16, 107, cx + k * 6, 110); g.closePath(); g.fill(); });
+      g.beginPath(); g.moveTo(cx + 2, 106); g.lineTo(cx + 10, 140); g.lineTo(cx + 15, 147); g.lineTo(cx + 4, 149); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(cx - 13, 179); g.quadraticCurveTo(cx, 186, cx + 13, 179); g.quadraticCurveTo(cx, 181, cx - 13, 179); g.fill();
+      g.beginPath(); g.moveTo(cx - 62, 150); g.quadraticCurveTo(cx - 50, 196, cx - 20, 212); g.lineTo(cx + 20, 212); g.quadraticCurveTo(cx + 50, 196, cx + 62, 150); g.lineTo(cx + 70, 256); g.lineTo(cx - 70, 256); g.closePath(); g.fill();
+      // hair on the sides and back
+      g.fillStyle = hair; g.beginPath(); g.moveTo(232, 0); g.quadraticCurveTo(222, 80, 226, 128); g.quadraticCurveTo(232, 150, 222, 172); g.lineTo(236, 256); g.lineTo(W, 256); g.lineTo(W, 0); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(24, 0); g.quadraticCurveTo(34, 80, 30, 128); g.quadraticCurveTo(24, 150, 34, 172); g.lineTo(20, 256); g.lineTo(0, 256); g.lineTo(0, 0); g.closePath(); g.fill();
       [-1, 1].forEach((k) => {
-        const ex = cx + k * 27, ey = 111;
-        g.save(); g.translate(ex, ey); g.rotate(k * -0.16);
-        g.fillStyle = 'rgba(40,16,8,0.45)'; g.beginPath(); g.ellipse(0, 0, 15, 8, 0, 0, TAU); g.fill();                 // socket
-        g.fillStyle = '#efe6d8'; g.beginPath(); g.moveTo(-12, 1); g.quadraticCurveTo(0, -7, 12, -1); g.quadraticCurveTo(0, 6, -12, 1); g.fill(); // white
-        g.fillStyle = '#2a160c'; g.beginPath(); g.arc(k * -1, -0.5, 4.6, 0, TAU); g.fill();
-        g.fillStyle = '#000'; g.beginPath(); g.arc(k * -1, -0.5, 2.2, 0, TAU); g.fill();
-        g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(k * -1 + 1, -3, 1.6, 1.6);
-        g.strokeStyle = '#140a06'; g.lineWidth = 2.6; g.lineCap = 'round'; g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.stroke(); // upper lid
-        g.lineWidth = 1; g.strokeStyle = 'rgba(60,24,10,0.7)'; g.beginPath(); g.moveTo(-11, 2.5); g.quadraticCurveTo(0, 7, 11, 0.5); g.stroke();
+        const ex = cx + k * 27, ey = 112;
+        g.save(); g.translate(ex, ey); g.rotate(k * -0.17);
+        g.fillStyle = '#f6efe2'; g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.fill();
+        g.save(); g.beginPath(); g.moveTo(-13, 1.5); g.quadraticCurveTo(0, -8.5, 13, -1.5); g.quadraticCurveTo(0, 6.5, -13, 1.5); g.clip();
+        g.fillStyle = '#5a2c14'; g.beginPath(); g.arc(-k * 1.2, -0.8, 5.6, 0, TAU); g.fill();
+        g.fillStyle = '#120806'; g.beginPath(); g.arc(-k * 1.2, -0.8, 2.9, 0, TAU); g.fill();
+        g.fillStyle = sk(0.7, 0.1); g.fillRect(-14, -9, 28, 4.6);         // the lid's shadow on the eye
         g.restore();
-        // brow: inner end low, outer end high
-        g.strokeStyle = hair; g.lineCap = 'round'; g.lineWidth = 6.5;
-        g.beginPath(); g.moveTo(cx + k * 9, 100); g.quadraticCurveTo(cx + k * 24, 92, cx + k * 43, 89); g.stroke();
-        g.lineWidth = 3; g.beginPath(); g.moveTo(cx + k * 40, 89); g.lineTo(cx + k * 48, 91); g.stroke();
+        g.fillStyle = '#ffffff'; g.beginPath(); g.arc(-k * 1.2 + 2.2, -2.6, 1.3, 0, TAU); g.fill();
+        g.strokeStyle = ink; g.lineWidth = 3.2; g.beginPath(); g.moveTo(-14, 2); g.quadraticCurveTo(0, -9.5, 14, -2); g.lineTo(16.5, -4.5); g.stroke();   // upper lid with a flick
+        g.lineWidth = 1.3; g.beginPath(); g.moveTo(2, 5.2); g.quadraticCurveTo(8, 4.6, 12.5, 0.5); g.stroke();
+        g.restore();
+        // brow: thick at the nose, sweeping up and out to a point
+        g.fillStyle = hair; g.beginPath(); g.moveTo(cx + k * 6, 103); g.quadraticCurveTo(cx + k * 22, 90, cx + k * 49, 86); g.quadraticCurveTo(cx + k * 30, 97, cx + k * 9, 108.5); g.closePath(); g.fill();
+        // cheekbone stroke
+        g.strokeStyle = sk(0.62, 0.2); g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + k * 42, 132); g.quadraticCurveTo(cx + k * 36, 140, cx + k * 27, 143); g.stroke();
       });
-      // frown lines, nose, mouth
-      g.strokeStyle = 'rgba(70,30,14,0.55)'; g.lineWidth = 1.4;
-      g.beginPath(); g.moveTo(cx - 4, 96); g.lineTo(cx - 3, 104); g.moveTo(cx + 4, 96); g.lineTo(cx + 3, 104); g.stroke();
-      g.strokeStyle = 'rgba(70,30,14,0.5)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(cx - 6, 112); g.quadraticCurveTo(cx - 10, 134, cx - 12, 142); g.stroke();
-      g.beginPath(); g.moveTo(cx + 6, 112); g.quadraticCurveTo(cx + 10, 134, cx + 12, 142); g.stroke();
-      g.fillStyle = 'rgba(40,14,8,0.75)'; g.beginPath(); g.ellipse(cx - 6, 145, 3.6, 2.2, 0.3, 0, TAU); g.ellipse(cx + 6, 145, 3.6, 2.2, -0.3, 0, TAU); g.fill();
-      g.strokeStyle = 'rgba(70,30,14,0.45)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx - 15, 146); g.quadraticCurveTo(cx - 21, 158, cx - 20, 168); g.moveTo(cx + 15, 146); g.quadraticCurveTo(cx + 21, 158, cx + 20, 168); g.stroke();
-      g.strokeStyle = '#3a130c'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 16, 169); g.quadraticCurveTo(cx, 164, cx + 16, 169); g.stroke();
-      g.strokeStyle = 'rgba(120,50,36,0.6)'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 10, 174); g.quadraticCurveTo(cx, 178, cx + 10, 174); g.stroke();
-      // facial hair
+      // frown lines, nostrils, mouth
+      g.strokeStyle = ink; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(cx - 3.5, 97); g.lineTo(cx - 2.5, 105); g.moveTo(cx + 3.5, 97); g.lineTo(cx + 2.5, 105); g.stroke();
+      g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx - 9, 146.5); g.quadraticCurveTo(cx - 6, 150, cx - 2.5, 147.5); g.moveTo(cx + 9, 146.5); g.quadraticCurveTo(cx + 6, 150, cx + 2.5, 147.5); g.stroke();
+      g.lineWidth = 2.8; g.beginPath(); g.moveTo(cx - 17, 171); g.quadraticCurveTo(cx - 8, 166.5, cx, 168); g.quadraticCurveTo(cx + 8, 166.5, cx + 17, 171); g.stroke();
+      g.lineWidth = 1.5; g.beginPath(); g.moveTo(cx - 19, 168.5); g.lineTo(cx - 21, 173); g.moveTo(cx + 19, 168.5); g.lineTo(cx + 21, 173); g.stroke();
       if (look.beard) {
-        g.strokeStyle = hair; g.lineCap = 'round';
-        g.lineWidth = 6; g.beginPath(); g.moveTo(cx - 2, 158); g.quadraticCurveTo(cx - 14, 157, cx - 25, 168 + (look.beard === 2 ? 8 : 0)); g.moveTo(cx + 2, 158); g.quadraticCurveTo(cx + 14, 157, cx + 25, 168 + (look.beard === 2 ? 8 : 0)); g.stroke();
-        g.fillStyle = hair; g.beginPath(); g.moveTo(cx - 52, 150); g.quadraticCurveTo(cx - 44, 196, cx - 16, 210); g.lineTo(cx + 16, 210); g.quadraticCurveTo(cx + 44, 196, cx + 52, 150);
-        g.quadraticCurveTo(cx + 34, 178, cx + 14, 182); g.quadraticCurveTo(cx, 176, cx - 14, 182); g.quadraticCurveTo(cx - 34, 178, cx - 52, 150); g.fill();
-        g.fillRect(cx - 5, 178, 10, 14);
-        g.fillStyle = hair; g.fillRect(cx - 30, 205, 60, 51);
-      } else {
-        g.fillStyle = 'rgba(40,24,16,0.14)'; g.beginPath(); g.ellipse(cx, 186, 40, 24, 0, 0, TAU); g.fill();
+        g.fillStyle = hair;
+        [-1, 1].forEach((k) => { g.beginPath(); g.moveTo(cx + k * 1, 156); g.quadraticCurveTo(cx + k * 14, 153, cx + k * 29, 168 + (look.beard === 2 ? 9 : 2)); g.quadraticCurveTo(cx + k * 14, 162, cx + k * 1, 163); g.closePath(); g.fill(); });   // moustache
+        g.beginPath(); g.moveTo(cx - 54, 148); g.quadraticCurveTo(cx - 46, 196, cx - 16, 212); g.lineTo(cx + 16, 212); g.quadraticCurveTo(cx + 46, 196, cx + 54, 148);
+        g.quadraticCurveTo(cx + 36, 180, cx + 14, 184); g.quadraticCurveTo(cx, 177, cx - 14, 184); g.quadraticCurveTo(cx - 36, 180, cx - 54, 148); g.fill();
+        g.beginPath(); g.moveTo(cx - 5, 178); g.lineTo(cx + 5, 178); g.lineTo(cx + 3, 192); g.lineTo(cx - 3, 192); g.closePath(); g.fill();
+        g.fillRect(cx - 30, 206, 60, 50);
       }
       if (look.patch) {
-        g.fillStyle = '#0b0908'; g.beginPath(); g.ellipse(cx + 27, 111, 19, 13, -0.1, 0, TAU); g.fill();
-        g.strokeStyle = '#0b0908'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx - 70, 70); g.lineTo(cx + 27, 108); g.lineTo(cx + 96, 122); g.stroke();
-        g.strokeStyle = 'rgba(120,40,30,0.7)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(cx + 12, 86); g.lineTo(cx + 40, 136); g.stroke();
+        g.fillStyle = '#0e0b0a'; g.beginPath(); g.ellipse(cx + 27, 111, 20, 14, -0.1, 0, TAU); g.fill();
+        g.strokeStyle = '#0e0b0a'; g.lineWidth = 5; g.beginPath(); g.moveTo(cx - 70, 70); g.lineTo(cx + 27, 108); g.lineTo(cx + 100, 122); g.stroke();
+        g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2; g.beginPath(); g.moveTo(cx + 13, 84); g.lineTo(cx + 18, 94); g.moveTo(cx + 38, 128); g.lineTo(cx + 42, 138); g.stroke();
       }
-      if (look.scar) { g.strokeStyle = 'rgba(130,50,40,0.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(cx - 44, 96); g.lineTo(cx - 30, 150); g.stroke(); }
+      if (look.scar) { g.strokeStyle = sk(0.6, 0.5); g.lineWidth = 2.2; g.beginPath(); g.moveTo(cx - 44, 96); g.lineTo(cx - 30, 150); g.stroke(); }
       if (look.helm === 'crown') {   // bare-headed: hair over the crown with a widow's peak
         g.fillStyle = hair; g.beginPath(); g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, 70); g.lineTo(232, 70);
-        g.quadraticCurveTo(190, 50, cx + 8, 62); g.lineTo(cx, 70); g.lineTo(cx - 8, 62); g.quadraticCurveTo(66, 50, 24, 70); g.lineTo(0, 70); g.closePath(); g.fill();
+        g.quadraticCurveTo(190, 50, cx + 8, 62); g.lineTo(cx, 71); g.lineTo(cx - 8, 62); g.quadraticCurveTo(66, 50, 24, 70); g.lineTo(0, 70); g.closePath(); g.fill();
       }
     }));
   }
-  // cape: the cloak colour with fold shading and a gold key-pattern border
+  // cape: flat colour, an ink edge and a gold key-pattern border
   function cape(color, trim) {
     return memo('c' + color + ',' + trim, () => mk(256, 256, (g, W, H) => {
+      const t = css(trim || 0xd2a850);
       g.fillStyle = css(color); g.fillRect(0, 0, W, H);
-      for (let x = 0; x < W; x += 16) { const gr = g.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, 'rgba(0,0,0,0.22)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.07)'); gr.addColorStop(1, 'rgba(0,0,0,0.22)'); g.fillStyle = gr; g.fillRect(x, 0, 16, H); }
-      g.strokeStyle = css(trim || 0xd2a850); g.lineWidth = 4;
-      g.strokeRect(9, 9, W - 18, H - 18);
-      g.lineWidth = 2.5;
-      for (let x = 22; x < W - 30; x += 22) { g.beginPath(); g.moveTo(x, H - 20); g.lineTo(x, H - 36); g.lineTo(x + 14, H - 36); g.lineTo(x + 14, H - 26); g.lineTo(x + 6, H - 26); g.stroke(); }
-      g.strokeRect(9, H - 44, W - 18, 0.1);
+      g.strokeStyle = '#' + new T.Color(color).multiplyScalar(0.3).getHexString(); g.lineWidth = 6; g.strokeRect(0, 0, W, H);
+      g.strokeStyle = t; g.lineWidth = 4.5; g.strokeRect(10, 10, W - 20, H - 20);
+      g.lineWidth = 2.6; g.lineJoin = 'miter';
+      for (let x = 24; x < W - 30; x += 22) { g.beginPath(); g.moveTo(x, H - 22); g.lineTo(x, H - 38); g.lineTo(x + 14, H - 38); g.lineTo(x + 14, H - 28); g.lineTo(x + 6, H - 28); g.stroke(); }
+      g.beginPath(); g.moveTo(10, H - 46); g.lineTo(W - 10, H - 46); g.stroke();
     }));
   }
-  // saddle cloth / caparison: cloth colour with a trimmed, patterned edge
+  // saddle cloth / caparison: flat colour, an ink edge, a trimmed and patterned border
   function blanket(color, trim) {
     return memo('b' + color + ',' + trim, () => mk(128, 128, (g, W, H) => {
+      const t = css(trim || 0xd2a850);
       g.fillStyle = css(color); g.fillRect(0, 0, W, H);
-      for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.12})`; g.fillRect(r() * W, r() * H, 2, 1); }
-      g.strokeStyle = css(trim || 0xd2a850); g.lineWidth = 5; g.strokeRect(6, 6, W - 12, H - 12);
-      g.lineWidth = 2; g.strokeRect(14, 14, W - 28, H - 28);
-      g.fillStyle = css(trim || 0xd2a850);
-      for (let x = 26; x < W - 20; x += 19) for (let y = 26; y < H - 20; y += 19) { g.beginPath(); g.moveTo(x, y - 3.5); g.lineTo(x + 3.5, y); g.lineTo(x, y + 3.5); g.lineTo(x - 3.5, y); g.fill(); }
+      g.strokeStyle = '#' + new T.Color(color).multiplyScalar(0.3).getHexString(); g.lineWidth = 5; g.strokeRect(0, 0, W, H);
+      g.strokeStyle = t; g.lineWidth = 5; g.strokeRect(7, 7, W - 14, H - 14);
+      g.lineWidth = 2; g.strokeRect(15, 15, W - 30, H - 30);
+      g.fillStyle = t;
+      for (let x = 27; x < W - 20; x += 19) for (let y = 27; y < H - 20; y += 19) { g.beginPath(); g.moveTo(x, y - 3.8); g.lineTo(x + 3.8, y); g.lineTo(x, y + 3.8); g.lineTo(x - 3.8, y); g.fill(); }
     }));
   }
-  return { lamellar, lamellarBump, cloth, leather, coat, hair: hairT, hairA, env, shadow, feather, face, cape, blanket };
+  return { lamellar, hair: hairT, hairA, shadow, feather, face, cape, blanket };
 })();

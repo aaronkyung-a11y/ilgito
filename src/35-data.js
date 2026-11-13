@@ -2,18 +2,23 @@
 const PALS = {
   dusk: { top: 0x1b1f3a, mid: 0x7a3b3b, hor: 0xf0a35a, sun: 0xffb46b, sunCore: 0xfff3d6, sunDir: [0.35, 0.13, -1], sunSize: 0.9965, cloud: 0.75, cloudDark: 0x3a2030, cloudLit: 0xffa560,
     fog: 0xd6935f, fogNear: 35, fogFar: 480, ground: 0x9a7350, hemiSky: 0xffc9a0, hemiGround: 0x4a3528, hemiI: 0.85, sunLight: 0xffb070, sunI: 0.9, fill: 0x8fa4c8, fillI: 0.4,
+    tLit: 0xfff1de, tShade: 0x8d7cae, tRim: 0xffd49c, ink: 0x2a1820, tExp: 1.12,
     ridge: 0x3b2a3a, mote: { color: [1, 0.85, 0.6], add: false, a: 0.35, size: 0.045, rise: 0.05 } },
   noon: { top: 0x5f86ad, mid: 0xbfc6b6, hor: 0xe9dcae, sun: 0xfff2c8, sunCore: 0xffffff, sunDir: [-0.3, 0.75, -0.6], sunSize: 0.9985, cloud: 0.4, cloudDark: 0x9aa3a6, cloudLit: 0xffffff,
     fog: 0xddd0a2, fogNear: 40, fogFar: 520, ground: 0xb79a62, hemiSky: 0xfff6dc, hemiGround: 0x6a5a3c, hemiI: 0.74, sunLight: 0xfff0cc, sunI: 0.72, fill: 0xb8c4d8, fillI: 0.16,
+    tLit: 0xfffdf2, tShade: 0x929fbe, tRim: 0xffffff, ink: 0x241d1a, tExp: 1.1,
     ridge: 0x6f7a78, mote: { color: [1, 0.95, 0.75], add: false, a: 0.4, size: 0.05, rise: 0.02 } },
   mist: { top: 0x2b3848, mid: 0x62748a, hor: 0xa9b5bf, sun: 0xcfe0ee, sunCore: 0xf2f8ff, sunDir: [0.5, 0.1, -0.85], sunSize: 0.998, cloud: 0.9, cloudDark: 0x39434f, cloudLit: 0xc4d2de,
     fog: 0x9eabb6, fogNear: 18, fogFar: 270, ground: 0x717868, hemiSky: 0xc7d6e6, hemiGround: 0x3c4238, hemiI: 0.95, sunLight: 0xd6e4f2, sunI: 0.5, fill: 0xaab8cc, fillI: 0.3,
+    tLit: 0xf0f5fa, tShade: 0x8c9aae, tRim: 0xeaf4ff, ink: 0x1e2228, tExp: 1.08,
     ridge: 0x4a5663, mote: { color: [0.9, 0.95, 1], add: false, a: 0.3, size: 0.07, rise: 0 } },
   fire: { top: 0x05060d, mid: 0x24121c, hor: 0xff7a2a, sun: 0xff5a14, sunCore: 0xffc070, sunDir: [-0.2, 0.02, -1], sunSize: 1.1, cloud: 0.85, cloudDark: 0x100a0e, cloudLit: 0xff6a20,
     fog: 0x5a2a18, fogNear: 20, fogFar: 300, ground: 0x4a3226, hemiSky: 0xff9a5a, hemiGround: 0x1a1210, hemiI: 0.55, sunLight: 0xff7a30, sunI: 1.05, fill: 0x6a7fb0, fillI: 0.45,
+    tLit: 0xffe2c0, tShade: 0x5e4c74, tRim: 0xff9a48, ink: 0x160c0e, tExp: 1.12,
     ridge: 0x120c10, mote: { color: [1, 0.55, 0.15], add: true, a: 0.9, size: 0.035, rise: 1.6 } },
   blood: { top: 0x140a14, mid: 0x5c1622, hor: 0xe2482c, sun: 0xff4a2a, sunCore: 0xffd0a0, sunDir: [0.0, 0.1, -1], sunSize: 0.992, cloud: 0.8, cloudDark: 0x1c0c14, cloudLit: 0xff5a30,
     fog: 0x8a3024, fogNear: 30, fogFar: 420, ground: 0x6a4038, hemiSky: 0xff8a70, hemiGround: 0x2a1414, hemiI: 0.7, sunLight: 0xff6a40, sunI: 1.0, fill: 0x8090c0, fillI: 0.48,
+    tLit: 0xffeee2, tShade: 0x66507e, tRim: 0xff8a5a, ink: 0x1c0a10, tExp: 1.1,
     ridge: 0x1a0a12, mote: { color: [1, 0.4, 0.15], add: true, a: 0.8, size: 0.03, rise: 0.9 } },
 };
 const ARMY = {
